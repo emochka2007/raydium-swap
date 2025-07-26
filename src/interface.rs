@@ -3,6 +3,7 @@
 use serde::Deserialize;
 
 /// Response from `/pools/info/mint`.
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub struct PoolInfosResponse {
     /// The request ID.
@@ -14,6 +15,7 @@ pub struct PoolInfosResponse {
 }
 
 /// Metadata and list of pools.
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub struct PoolInfosResponseData {
     count: Option<u32>,
@@ -22,6 +24,7 @@ pub struct PoolInfosResponseData {
 
 /// Response from `/pools/info/ids`.
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct PoolInfoResponse {
     pub(crate) data: Vec<PoolInfoData>,
 }
@@ -117,6 +120,7 @@ pub struct RewardDefaultInfo {
 /// Token mint metadata.
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct Mint {
     pub chain_id: u32,
     pub(crate) address: String,
@@ -136,6 +140,7 @@ pub struct MintExtensions {}
 
 /// Response from `/pools/key/ids`.
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct PoolKeysResponse {
     pub id: String,
     success: bool,
@@ -145,6 +150,7 @@ pub struct PoolKeysResponse {
 /// On‑chain account addresses needed for swaps.
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct PoolKey {
     /// AMM program ID.
     pub program_id: String,
@@ -171,8 +177,8 @@ pub struct PoolKey {
 /// Vault addresses for token A and B.
 #[derive(Deserialize, Debug)]
 pub struct Vault {
-    #[serde(rename="A")]
+    #[serde(rename = "A")]
     pub(crate) a: String,
-    #[serde(rename="B")]
+    #[serde(rename = "B")]
     pub(crate) b: String,
 }

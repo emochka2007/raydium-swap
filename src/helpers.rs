@@ -9,9 +9,8 @@ use solana_sdk::signature::Keypair;
 /// - If any element fails to parse into a `u8`.
 /// - If the resulting byte slice cannot be converted into a valid `Keypair`.
 ///
-/// # Examples
 ///
-/// ```
+/// ```example
 /// let env = "[1,2,3,...]".to_string();
 /// let kp = from_bytes_to_key_pair(env);
 /// ```
@@ -21,5 +20,5 @@ pub fn from_bytes_to_key_pair(env: String) -> Keypair {
         .split(',')
         .map(|s| s.trim().parse::<u8>().expect("Error converting to bytes"))
         .collect();
-    Keypair::from_bytes(&bytes).expect("Error converting bytes to Keypair")
+    Keypair::try_from(bytes.as_slice()).expect("Error converting bytes to Keypair")
 }

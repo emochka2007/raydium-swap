@@ -1,3 +1,8 @@
+use crate::amm::{AmmInstruction, SwapInstructionBaseIn};
+use crate::consts::{AMM_V4, LIQUIDITY_FEES_DENOMINATOR, LIQUIDITY_FEES_NUMERATOR};
+use crate::interface::{
+    PoolInfoData, PoolInfoResponse, PoolInfosResponse, PoolKey, PoolKeysResponse,
+};
 use anchor_client::anchor_lang::prelude::AccountMeta;
 use anyhow::anyhow;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -10,19 +15,23 @@ use solana_sdk::signature::{Keypair, Signature};
 use solana_sdk::signer::Signer;
 use solana_sdk::transaction::Transaction;
 use solana_system_interface::instruction::transfer;
-use tracing::{debug, warn};
 use tracing::log::info;
-use crate::amm::{AmmInstruction, SwapInstructionBaseIn};
-use crate::consts::{AMM_V4, LIQUIDITY_FEES_DENOMINATOR, LIQUIDITY_FEES_NUMERATOR, SOL_MINT};
-use crate::interface::{PoolInfoData, PoolInfoResponse, PoolInfosResponse, PoolKey, PoolKeysResponse};
+use tracing::{debug, warn};
 
+/// The result of computing a swap quote.
 #[derive(Debug)]
 pub struct ComputeAmountOutResult {
+    /// Raw amount out before slippage.
     pub amount_out: u64,
+    /// Minimum amount out after slippage tolerance.
     pub min_amount_out: u64,
+    /// Current on‑chain price (quote/base).
     pub current_price: f64,
+    /// Execution price for the quoted trade.
     pub execution_price: f64,
+    /// Percent price impact of this trade.
     pub price_impact: f64,
+    /// Fee deducted from the input.
     pub fee: u64,
 }
 
@@ -97,11 +106,15 @@ struct AccountLayout {
     close_authority: Pubkey,
 }
 
+/// On‑chain reserves for a pool.
 pub struct RpcPoolInfo {
-    quote_reserve: u64,
-    base_reserve: u64,
+    /// Amount of quote token in vault.
+    pub quote_reserve: u64,
+    /// Amount of base token in vault.
+    pub base_reserve: u64,
 }
 
+/// High‑level client for performing swaps between two mints.
 pub struct AmmSwapClient {
     owner: Keypair,
     rpc_client: RpcClient,
@@ -110,15 +123,24 @@ pub struct AmmSwapClient {
 }
 
 impl AmmSwapClient {
+    /// Creates a new swap client.
+    ///
+    /// # Arguments
+    ///
+    /// - `rpc_client`: the Solana RPC client to use.
+    /// - `mint_1`: the base token mint.
+    /// - `mint_2`: the quote token mint.
+    /// - `owner`: signer for transaction execution.
     pub fn new(rpc_client: RpcClient, mint_1: Pubkey, mint_2: Pubkey, owner: Keypair) -> Self {
         Self {
             owner,
             rpc_client,
             mint_1,
-            mint_2
+            mint_2,
         }
     }
 
+    /// Fetch raw pool account keys by pool ID via HTTP API.
     pub async fn fetch_pools_keys_by_id(&self, id: &Pubkey) -> anyhow::Result<PoolKeysResponse> {
         let url = format!("https://api-v3.raydium.io/pools/key/ids?ids={}", id);
         let client = Client::new();
@@ -126,12 +148,16 @@ impl AmmSwapClient {
         Ok(resp.json().await?)
     }
 
+    /// Retrieve on‑chain reserves for a given pool account.
+    ///
+    /// # Errors
+    /// Returns an error if the account data cannot be deserialized.
     pub async fn get_rpc_pool_info(&self, pool_id: &Pubkey) -> anyhow::Result<RpcPoolInfo> {
         let account = self.rpc_client.get_account(&pool_id).await?;
         let data = account.data;
         let market_state = LiquidityStateLayoutV4::try_from_slice(&data)
             .map_err(|e| anyhow!("Failed to decode market state: {:?}", e))?;
-        debug!("Market state {:?}" , market_state);
+        debug!("Market state {:?}", market_state);
         let mint1_account_data = self
             .rpc_client
             .get_account_with_commitment(&market_state.base_vault, CommitmentConfig::confirmed())
@@ -155,6 +181,7 @@ impl AmmSwapClient {
         })
     }
 
+    /// Fetch pool metadata (price, TVL, stats) by ID via HTTP API.
     pub async fn fetch_pool_by_id(&self, id: &Pubkey) -> anyhow::Result<PoolInfoResponse> {
         let url = format!("https://api-v3.raydium.io/pools/info/ids?ids={}", id);
         let client = Client::new();
@@ -162,7 +189,16 @@ impl AmmSwapClient {
         Ok(resp.json().await?)
     }
 
-    pub async fn fetch_pool_info(&self, pool_type: &str, page_size: u32, page: u32) -> anyhow::Result<PoolInfosResponse> {
+    /// List pools for the given pair via HTTP API.
+    ///
+    /// - `pool_type`: e.g. "standard".
+    /// - `page_size`, `page`: pagination.
+    pub async fn fetch_pool_info(
+        &self,
+        pool_type: &str,
+        page_size: u32,
+        page: u32,
+    ) -> anyhow::Result<PoolInfosResponse> {
         let pool_sort_field = "default";
         let sort_type = "desc";
         let url = format!(
@@ -174,6 +210,14 @@ impl AmmSwapClient {
         Ok(resp.json().await?)
     }
 
+    /// Compute a swap quote (amount out, fee, slippage).
+    ///
+    /// # Arguments
+    ///
+    /// - `rpc_pool_info`: on‑chain reserves.
+    /// - `pool_info`: off‑chain pool metadata.
+    /// - `amount_in`: amount of base token to swap (in smallest units).
+    /// - `slippage`: tolerance (e.g. `0.005` for 0.5%).
     pub fn compute_amount_out(
         &self,
         rpc_pool_info: &RpcPoolInfo,
@@ -200,14 +244,14 @@ impl AmmSwapClient {
         debug!("Current price {}", current_price);
 
         // ------- Amount + Fee calculation --------
-        let fee =
-            amount_in.saturating_mul(LIQUIDITY_FEES_NUMERATOR).div_ceil(LIQUIDITY_FEES_DENOMINATOR);
-        let amount_in_with_fee =amount_in.saturating_sub(fee);
+        let fee = amount_in
+            .saturating_mul(LIQUIDITY_FEES_NUMERATOR)
+            .div_ceil(LIQUIDITY_FEES_DENOMINATOR);
+        let amount_in_with_fee = amount_in.saturating_sub(fee);
         let denominator = reserve_in.saturating_add(amount_in_with_fee);
         let amount_out_raw = reserve_out.saturating_mul(amount_in_with_fee) / denominator;
 
-        let min_amount_out = ((amount_out_raw as f64) * (1.0 -slippage)).floor() as u64;
-
+        let min_amount_out = ((amount_out_raw as f64) * (1.0 - slippage)).floor() as u64;
 
         let exec_out_f = min_amount_out as f64 / div_out as f64;
         let exec_in_f = amount_in.saturating_sub(fee) as f64 / div_in as f64;
@@ -255,11 +299,7 @@ impl AmmSwapClient {
                         &spl_token::id(),
                     ),
                     // Amount is hardcoded based on network fee
-                    transfer(
-                        &self.owner.pubkey(),
-                        &associated_token_account,
-                        2_500_000,
-                    ),
+                    transfer(&self.owner.pubkey(), &associated_token_account, 2_500_000),
                     spl_token::instruction::sync_native(
                         &spl_token::id(),
                         &associated_token_account,
@@ -306,17 +346,21 @@ impl AmmSwapClient {
     ///   15. `[writable]` User source token Account.
     ///   16. `[writable]` User destination token Account.
     ///   17. `[signer]` User wallet Account
-    pub async fn swap(&self,
-                      pool_keys: &PoolKey,
-                      amount_in: u64,
-                      amount_out: u64, // out.amount_out means amount 'without' slippage
+    pub async fn swap(
+        &self,
+        pool_keys: &PoolKey,
+        amount_in: u64,
+        amount_out: u64, // out.amount_out means amount 'without' slippage
     ) -> anyhow::Result<Signature> {
         let amm_program = Pubkey::from_str_const(AMM_V4);
 
         let user_token_source = self.get_or_create_token_program(self.mint_1).await?;
         let user_token_destination = self.get_or_create_token_program(self.mint_2).await?;
 
-        info!("Executing swap from {:?} to {:?}", user_token_source, user_token_destination);
+        info!(
+            "Executing swap from {:?} to {:?}",
+            user_token_source, user_token_destination
+        );
 
         let data = AmmInstruction::SwapBaseIn(SwapInstructionBaseIn {
             amount_in,
@@ -363,28 +407,25 @@ impl AmmSwapClient {
             recent_blockhash.clone(),
         );
 
-        let sig = &self
-            .rpc_client
-            .send_and_confirm_transaction(&tx)
-            .await?;
+        let sig = &self.rpc_client.send_and_confirm_transaction(&tx).await?;
         info!("Executed with Signature {sig}");
         Ok(sig.clone())
     }
 }
 
-
-
-
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::helpers::from_bytes_to_key_pair;
+    use dotenvy::dotenv;
     use std::env;
     use std::str::FromStr;
-    use dotenvy::dotenv;
-    use crate::helpers::from_bytes_to_key_pair;
-    use super::*;
+    use crate::consts::SOL_MINT;
 
     pub fn init_amm_client() -> AmmSwapClient {
-        dotenv().map_err(|e| anyhow!("Error initializing dotenv {e:?}")).unwrap();
+        dotenv()
+            .map_err(|e| anyhow!("Error initializing dotenv {e:?}"))
+            .unwrap();
         let url = env::var("RPC_URL").unwrap();
         let mint_1 = Pubkey::from_str(&env::var("MINT_1").unwrap_or(SOL_MINT.to_string())).unwrap();
         let mint_2 = Pubkey::from_str(&env::var("MINT_2").unwrap_or(SOL_MINT.to_string())).unwrap();
@@ -397,76 +438,102 @@ mod tests {
     #[tokio::test]
     async fn test_pool_info() {
         let amm_swap_client = init_amm_client();
-        amm_swap_client.fetch_pool_info("standard", 100, 1).await.map_err(|e| anyhow!("Error fetching pool_info {e:?}")).unwrap();
+        amm_swap_client
+            .fetch_pool_info("standard", 100, 1)
+            .await
+            .map_err(|e| anyhow!("Error fetching pool_info {e:?}"))
+            .unwrap();
     }
 
     #[tokio::test]
     async fn test_pool_by_id() {
         let amm_swap_client = init_amm_client();
         let id = Pubkey::from_str_const("58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2");
-        amm_swap_client.fetch_pool_by_id(&id).await.map_err(|e| anyhow!("Error fetching pool_info {e:?}")).unwrap();
+        amm_swap_client
+            .fetch_pool_by_id(&id)
+            .await
+            .map_err(|e| anyhow!("Error fetching pool_info {e:?}"))
+            .unwrap();
     }
 
     #[tokio::test]
     async fn test_pool_keys_by_id() {
         let amm_swap_client = init_amm_client();
         let id = Pubkey::from_str_const("58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2");
-        amm_swap_client.fetch_pools_keys_by_id(&id).await.map_err(|e| anyhow!("Error fetching pool_info {e:?}")).unwrap();
+        amm_swap_client
+            .fetch_pools_keys_by_id(&id)
+            .await
+            .map_err(|e| anyhow!("Error fetching pool_info {e:?}"))
+            .unwrap();
     }
 
     #[tokio::test]
     async fn test_rpc_pool_info() {
         let amm_swap_client = init_amm_client();
         let id = Pubkey::from_str_const("58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2");
-        amm_swap_client.get_rpc_pool_info(&id).await.map_err(|e| anyhow!("Error fetching pool_info {e:?}")).unwrap();
+        amm_swap_client
+            .get_rpc_pool_info(&id)
+            .await
+            .map_err(|e| anyhow!("Error fetching pool_info {e:?}"))
+            .unwrap();
     }
 
     #[tokio::test]
     async fn calculate_amount_out() {
         let amm_swap_client = init_amm_client();
         let id = Pubkey::from_str_const("58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2");
-        let pool_info = amm_swap_client.fetch_pool_by_id(&id).await.map_err(|e| anyhow!("Error fetching pool by id {e:?}")).unwrap();
-        let rpc_data = amm_swap_client.get_rpc_pool_info(&id).await.map_err(|e|anyhow!("Error fetching rpc pool info {e:?}")).unwrap();
+        let pool_info = amm_swap_client
+            .fetch_pool_by_id(&id)
+            .await
+            .map_err(|e| anyhow!("Error fetching pool by id {e:?}"))
+            .unwrap();
+        let rpc_data = amm_swap_client
+            .get_rpc_pool_info(&id)
+            .await
+            .map_err(|e| anyhow!("Error fetching rpc pool info {e:?}"))
+            .unwrap();
 
         let pool = pool_info.data.get(0).unwrap();
-        let args = amm_swap_client.compute_amount_out(&rpc_data, pool, 500, 0.01).unwrap();
+        let args = amm_swap_client
+            .compute_amount_out(&rpc_data, pool, 500, 0.01)
+            .unwrap();
         assert_eq!(args.amount_out * 0, 0);
     }
 
-    // #[tokio::test]
-    // async fn test_swap() {
-    //     let amount_in = 500;
-    //     let slippage = 0.01;
-    //     let amm_swap_client = init_amm_client();
-    //
-    //     let pool_id = Pubkey::from_str_const("58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2");
-    //
-    //     let pool_info = amm_swap_client.fetch_pool_by_id(&pool_id).await.map_err(|e| anyhow!("Error fetching pool by id {e:?}")).unwrap();
-    //
-    //     let pool_keys = amm_swap_client.fetch_pools_keys_by_id(&pool_id).await.map_err(|e|anyhow!("Error fetching pool keys {e:?}")).unwrap();
-    //
-    //     let rpc_data = amm_swap_client.get_rpc_pool_info(&pool_id).await.map_err(|e|anyhow!("Error fetching rpc pool info {e:?}")).unwrap();
-    //
-    //     let pool = pool_info.data.get(0).unwrap();
-    //
-    //     let compute = amm_swap_client
-    //         .compute_amount_out(
-    //             &rpc_data,
-    //             &pool,
-    //             amount_in,
-    //             0.01,
-    //         ).unwrap();
-    //
-    //     let key = pool_keys.data.get(0).unwrap();
-    //
-    //     let _sig = amm_swap_client
-    //         .swap(
-    //             key,
-    //             amount_in,
-    //             compute.amount_out,
-    //         )
-    //         .await.unwrap();
-    //     assert!(true);
-    //
-    // }
+    #[tokio::test]
+    async fn test_swap() {
+        let amount_in = 500;
+        let slippage = 0.01;
+        let amm_swap_client = init_amm_client();
+
+        let pool_id = Pubkey::from_str_const("58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2");
+
+        let pool_info = amm_swap_client.fetch_pool_by_id(&pool_id).await.map_err(|e| anyhow!("Error fetching pool by id {e:?}")).unwrap();
+
+        let pool_keys = amm_swap_client.fetch_pools_keys_by_id(&pool_id).await.map_err(|e|anyhow!("Error fetching pool keys {e:?}")).unwrap();
+
+        let rpc_data = amm_swap_client.get_rpc_pool_info(&pool_id).await.map_err(|e|anyhow!("Error fetching rpc pool info {e:?}")).unwrap();
+
+        let pool = pool_info.data.get(0).unwrap();
+
+        let compute = amm_swap_client
+            .compute_amount_out(
+                &rpc_data,
+                &pool,
+                amount_in,
+                slippage,
+            ).unwrap();
+
+        let key = pool_keys.data.get(0).unwrap();
+
+        let _sig = amm_swap_client
+            .swap(
+                key,
+                amount_in,
+                compute.amount_out,
+            )
+            .await.unwrap();
+        assert!(true);
+
+    }
 }

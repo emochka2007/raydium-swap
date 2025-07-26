@@ -309,11 +309,11 @@ impl AmmInstruction {
         let mut buf = Vec::with_capacity(size_of::<Self>());
         match &*self {
             Self::Initialize2(InitializeInstruction2 {
-                                  nonce,
-                                  open_time,
-                                  init_pc_amount,
-                                  init_coin_amount,
-                              }) => {
+                nonce,
+                open_time,
+                init_pc_amount,
+                init_coin_amount,
+            }) => {
                 buf.push(1);
                 buf.push(*nonce);
                 buf.extend_from_slice(&open_time.to_le_bytes());
@@ -321,10 +321,10 @@ impl AmmInstruction {
                 buf.extend_from_slice(&init_coin_amount.to_le_bytes());
             }
             Self::Deposit(DepositInstruction {
-                              max_coin_amount,
-                              max_pc_amount,
-                              base_side,
-                          }) => {
+                max_coin_amount,
+                max_pc_amount,
+                base_side,
+            }) => {
                 buf.push(3);
                 buf.extend_from_slice(&max_coin_amount.to_le_bytes());
                 buf.extend_from_slice(&max_pc_amount.to_le_bytes());
@@ -336,17 +336,17 @@ impl AmmInstruction {
             }
 
             Self::SwapBaseIn(SwapInstructionBaseIn {
-                                 amount_in,
-                                 minimum_amount_out,
-                             }) => {
+                amount_in,
+                minimum_amount_out,
+            }) => {
                 buf.push(9);
                 buf.extend_from_slice(&amount_in.to_le_bytes());
                 buf.extend_from_slice(&minimum_amount_out.to_le_bytes());
             }
             Self::SwapBaseOut(SwapInstructionBaseOut {
-                                  max_amount_in,
-                                  amount_out,
-                              }) => {
+                max_amount_in,
+                amount_out,
+            }) => {
                 buf.push(11);
                 buf.extend_from_slice(&max_amount_in.to_le_bytes());
                 buf.extend_from_slice(&amount_out.to_le_bytes());
@@ -450,7 +450,7 @@ pub fn deposit(
         max_pc_amount,
         base_side,
     })
-        .pack()?;
+    .pack()?;
 
     let accounts = vec![
         // spl token
@@ -574,7 +574,7 @@ pub fn swap_base_in(
         amount_in,
         minimum_amount_out,
     })
-        .pack()?;
+    .pack()?;
 
     let accounts = vec![
         // spl token
@@ -635,7 +635,7 @@ pub fn swap_base_out(
         max_amount_in,
         amount_out,
     })
-        .pack()?;
+    .pack()?;
 
     let accounts = vec![
         // spl token
