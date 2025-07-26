@@ -7,7 +7,7 @@ use serde::Deserialize;
 #[derive(Deserialize, Debug)]
 pub struct PoolInfosResponse {
     /// The request ID.
-    pub(crate) id: String,
+    pub id: String,
     /// Whether the API call was successful.
     pub success: bool,
     /// The payload data.
@@ -144,7 +144,7 @@ pub struct MintExtensions {}
 pub struct PoolKeysResponse {
     pub id: String,
     pub success: bool,
-    pub(crate) data: Vec<PoolKey>,
+    pub data: Vec<PoolKey>,
 }
 
 /// On‑chain account addresses needed for swaps.
