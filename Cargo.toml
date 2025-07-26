@@ -1,0 +1,23 @@
+[package]
+name = "raydium-amm-swap"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+solana-client = "2.3.5"
+reqwest = { version = "0.12.22", features = ["json"] }
+dotenvy = "0.15.7"
+solana-commitment-config = "2.2.1"
+solana-sdk = "2.3.1"
+tokio = "1.46.1"
+borsh = { version = "1.5.5", features = ["derive"] }
+anchor-client = { version = "0.31.1", features = ["async"] }
+spl-associated-token-account = "7.0.0"
+spl-token = "8.0.0"
+tracing-subscriber = "0.3.19"
+tracing = "0.1.41"
+anyhow = "1.0.98"
+anchor-lang = { version = "0.31.1" }
+anchor-spl = { version = "0.31.1" }
+solana-system-interface = "1.0.0"
+serde = { version = "1.0.219", features = ["derive"] }
