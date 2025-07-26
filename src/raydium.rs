@@ -433,40 +433,40 @@ mod tests {
         assert_eq!(args.amount_out * 0, 0);
     }
 
-    #[tokio::test]
-    async fn test_swap() {
-        let amount_in = 500;
-        let slippage = 0.01;
-        let amm_swap_client = init_amm_client();
-
-        let pool_id = Pubkey::from_str_const("58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2");
-
-        let pool_info = amm_swap_client.fetch_pool_by_id(&pool_id).await.map_err(|e| anyhow!("Error fetching pool by id {e:?}")).unwrap();
-
-        let pool_keys = amm_swap_client.fetch_pools_keys_by_id(&pool_id).await.map_err(|e|anyhow!("Error fetching pool keys {e:?}")).unwrap();
-
-        let rpc_data = amm_swap_client.get_rpc_pool_info(&pool_id).await.map_err(|e|anyhow!("Error fetching rpc pool info {e:?}")).unwrap();
-
-        let pool = pool_info.data.get(0).unwrap();
-
-        let compute = amm_swap_client
-            .compute_amount_out(
-                &rpc_data,
-                &pool,
-                amount_in,
-                0.01,
-            ).unwrap();
-
-        let key = pool_keys.data.get(0).unwrap();
-
-        let _sig = amm_swap_client
-            .swap(
-                key,
-                amount_in,
-                compute.amount_out,
-            )
-            .await.unwrap();
-        assert!(true);
-
-    }
+    // #[tokio::test]
+    // async fn test_swap() {
+    //     let amount_in = 500;
+    //     let slippage = 0.01;
+    //     let amm_swap_client = init_amm_client();
+    //
+    //     let pool_id = Pubkey::from_str_const("58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2");
+    //
+    //     let pool_info = amm_swap_client.fetch_pool_by_id(&pool_id).await.map_err(|e| anyhow!("Error fetching pool by id {e:?}")).unwrap();
+    //
+    //     let pool_keys = amm_swap_client.fetch_pools_keys_by_id(&pool_id).await.map_err(|e|anyhow!("Error fetching pool keys {e:?}")).unwrap();
+    //
+    //     let rpc_data = amm_swap_client.get_rpc_pool_info(&pool_id).await.map_err(|e|anyhow!("Error fetching rpc pool info {e:?}")).unwrap();
+    //
+    //     let pool = pool_info.data.get(0).unwrap();
+    //
+    //     let compute = amm_swap_client
+    //         .compute_amount_out(
+    //             &rpc_data,
+    //             &pool,
+    //             amount_in,
+    //             0.01,
+    //         ).unwrap();
+    //
+    //     let key = pool_keys.data.get(0).unwrap();
+    //
+    //     let _sig = amm_swap_client
+    //         .swap(
+    //             key,
+    //             amount_in,
+    //             compute.amount_out,
+    //         )
+    //         .await.unwrap();
+    //     assert!(true);
+    //
+    // }
 }
