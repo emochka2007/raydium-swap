@@ -9,24 +9,24 @@ pub struct PoolInfosResponse {
     /// The request ID.
     pub(crate) id: String,
     /// Whether the API call was successful.
-    success: bool,
+    pub success: bool,
     /// The payload data.
-    pub(crate) data: PoolInfosResponseData,
+    pub data: PoolInfosResponseData,
 }
 
 /// Metadata and list of pools.
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub struct PoolInfosResponseData {
-    count: Option<u32>,
-    pub(crate) data: Vec<PoolInfoData>,
+    pub count: Option<u32>,
+    pub data: Vec<PoolInfoData>,
 }
 
 /// Response from `/pools/info/ids`.
 #[derive(Deserialize, Debug)]
 #[allow(dead_code)]
 pub struct PoolInfoResponse {
-    pub(crate) data: Vec<PoolInfoData>,
+    pub data: Vec<PoolInfoData>,
 }
 
 /// Detailed information for a single pool.
@@ -40,9 +40,9 @@ pub struct PoolInfoData {
     /// Pool account address.
     pub id: String,
     /// Token A mint information.
-    pub(crate) mint_a: Mint,
+    pub mint_a: Mint,
     /// Token B mint information.
-    pub(crate) mint_b: Mint,
+    pub mint_b: Mint,
     /// Current pool price (token B per token A).
     pub price: f64,
     /// Token A reserve amount.
@@ -123,12 +123,12 @@ pub struct RewardDefaultInfo {
 #[allow(dead_code)]
 pub struct Mint {
     pub chain_id: u32,
-    pub(crate) address: String,
+    pub address: String,
     pub program_id: String,
     pub logo_uri: Option<String>,
     pub symbol: String,
     pub name: String,
-    pub(crate) decimals: u32,
+    pub decimals: u32,
     pub tags: Vec<String>,
     pub extensions: MintExtensions,
 }
@@ -143,7 +143,7 @@ pub struct MintExtensions {}
 #[allow(dead_code)]
 pub struct PoolKeysResponse {
     pub id: String,
-    success: bool,
+    pub success: bool,
     pub(crate) data: Vec<PoolKey>,
 }
 
@@ -155,30 +155,30 @@ pub struct PoolKey {
     /// AMM program ID.
     pub program_id: String,
     /// Pool account address.
-    pub(crate) id: String,
-    pub(crate) mint_a: Mint,
-    pub(crate) mint_b: Mint,
-    lookup_table_account: String,
-    open_time: String,
-    pub(crate) vault: Vault,
-    pub(crate) authority: String,
-    pub(crate) open_orders: String,
-    target_orders: String,
-    pub(crate) market_program_id: String,
-    pub(crate) market_id: String,
-    pub(crate) market_authority: String,
-    pub(crate) market_base_vault: String,
-    pub(crate) market_quote_vault: String,
-    pub(crate) market_bids: String,
-    pub(crate) market_asks: String,
-    pub(crate) market_event_queue: String,
+    pub id: String,
+    pub mint_a: Mint,
+    pub mint_b: Mint,
+    pub lookup_table_account: String,
+    pub open_time: String,
+    pub vault: Vault,
+    pub authority: String,
+    pub open_orders: String,
+    pub target_orders: String,
+    pub market_program_id: String,
+    pub market_id: String,
+    pub market_authority: String,
+    pub market_base_vault: String,
+    pub market_quote_vault: String,
+    pub market_bids: String,
+    pub market_asks: String,
+    pub market_event_queue: String,
 }
 
 /// Vault addresses for token A and B.
 #[derive(Deserialize, Debug)]
 pub struct Vault {
     #[serde(rename = "A")]
-    pub(crate) a: String,
+    pub a: String,
     #[serde(rename = "B")]
-    pub(crate) b: String,
+    pub b: String,
 }
