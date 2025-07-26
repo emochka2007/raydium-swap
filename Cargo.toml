@@ -2,6 +2,11 @@
 name = "raydium-amm-swap"
 version = "0.1.0"
 edition = "2024"
+authors = ["Nikita Pozniakov"]
+description = "A high‑level client for interacting with Raydium AMM pools on Solana"
+repository = "https://github.com/emochka2007/raydium-swap"
+license = "MIT"
+keywords = ["solana", "raydium"]
 
 [dependencies]
 solana-client = "2.3.5"
