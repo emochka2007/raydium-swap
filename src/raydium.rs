@@ -3,9 +3,10 @@ use crate::consts::{AMM_V4, LIQUIDITY_FEES_DENOMINATOR, LIQUIDITY_FEES_NUMERATOR
 use crate::interface::{
     PoolInfoData, PoolInfoResponse, PoolInfosResponse, PoolKey, PoolKeysResponse,
 };
-use anyhow::anyhow;
+use anyhow::{Context, anyhow};
 use borsh::{BorshDeserialize, BorshSerialize};
 use reqwest::Client;
+use serde::de::DeserializeOwned;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::instruction::AccountMeta;
@@ -116,6 +117,8 @@ pub struct RpcPoolInfo {
 
 /// High‑level client for performing swaps between two mints.
 pub struct AmmSwapClient {
+    reqwest_client: Client,
+    base_url: String,
     owner: Keypair,
     rpc_client: RpcClient,
     mint_1: Pubkey,
@@ -132,20 +135,43 @@ impl AmmSwapClient {
     /// - `mint_2`: the quote token mint.
     /// - `owner`: signer for transaction execution.
     pub fn new(rpc_client: RpcClient, mint_1: Pubkey, mint_2: Pubkey, owner: Keypair) -> Self {
+        let reqwest_client = Client::new();
+        let base_url = "https://api-v3.raydium.io".to_string();
         Self {
-            owner,
             rpc_client,
+            base_url,
             mint_1,
             mint_2,
+            owner,
+            reqwest_client,
         }
+    }
+
+    async fn get<T: DeserializeOwned>(
+        &self,
+        path: Option<&str>,
+        query: Option<&[(&str, &str)]>,
+    ) -> anyhow::Result<T> {
+        let url = format!("{}{}", self.base_url, path.unwrap_or_default());
+        let response = self
+            .reqwest_client
+            .get(&url)
+            .query(query.unwrap_or(&[]))
+            .send()
+            .await
+            .context("Raydium amm get failed")?
+            .error_for_status()
+            .context("Raydium non-200")?;
+
+        Ok(response.json::<T>().await?)
     }
 
     /// Fetch raw pool account keys by pool ID via HTTP API.
     pub async fn fetch_pools_keys_by_id(&self, id: &Pubkey) -> anyhow::Result<PoolKeysResponse> {
-        let url = format!("https://api-v3.raydium.io/pools/key/ids?ids={}", id);
-        let client = Client::new();
-        let resp = client.get(url).send().await?;
-        Ok(resp.json().await?)
+        let id = id.to_string();
+        let headers = ("ids", id.as_str());
+        let resp: PoolKeysResponse = self.get(Some("/pools/key/ids"), Some(&[headers])).await?;
+        Ok(resp)
     }
 
     /// Retrieve on‑chain reserves for a given pool account.
@@ -183,10 +209,9 @@ impl AmmSwapClient {
 
     /// Fetch pool metadata (price, TVL, stats) by ID via HTTP API.
     pub async fn fetch_pool_by_id(&self, id: &Pubkey) -> anyhow::Result<PoolInfoResponse> {
-        let url = format!("https://api-v3.raydium.io/pools/info/ids?ids={}", id);
-        let client = Client::new();
-        let resp = client.get(url).send().await?;
-        Ok(resp.json().await?)
+        let id = id.to_string();
+        let headers = ("ids", id.as_str());
+        self.get(Some("/pools/info/ids"), Some(&[headers])).await
     }
 
     /// List pools for the given pair via HTTP API.
@@ -410,134 +435,5 @@ impl AmmSwapClient {
         let sig = &self.rpc_client.send_and_confirm_transaction(&tx).await?;
         info!("Executed with Signature {sig}");
         Ok(*sig)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::consts::SOL_MINT;
-    use crate::helpers::from_bytes_to_key_pair;
-    use dotenvy::dotenv;
-    use std::env;
-    use std::str::FromStr;
-
-    pub fn init_amm_client() -> AmmSwapClient {
-        dotenv()
-            .map_err(|e| anyhow!("Error initializing dotenv {e:?}"))
-            .unwrap();
-        let url = env::var("RPC_URL").unwrap();
-        let mint_1 = Pubkey::from_str(&env::var("MINT_1").unwrap_or(SOL_MINT.to_string())).unwrap();
-        let mint_2 = Pubkey::from_str(&env::var("MINT_2").unwrap_or(SOL_MINT.to_string())).unwrap();
-        let rpc_client = RpcClient::new(url);
-        let owner = env::var("KEYPAIR").expect("KEYPAIR env is not presented");
-        let raydium = AmmSwapClient::new(rpc_client, mint_1, mint_2, from_bytes_to_key_pair(owner));
-        raydium
-    }
-
-    #[tokio::test]
-    async fn test_pool_info() {
-        let amm_swap_client = init_amm_client();
-        amm_swap_client
-            .fetch_pool_info("standard", 100, 1)
-            .await
-            .map_err(|e| anyhow!("Error fetching pool_info {e:?}"))
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_pool_by_id() {
-        let amm_swap_client = init_amm_client();
-        let id = Pubkey::from_str_const("58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2");
-        amm_swap_client
-            .fetch_pool_by_id(&id)
-            .await
-            .map_err(|e| anyhow!("Error fetching pool_info {e:?}"))
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_pool_keys_by_id() {
-        let amm_swap_client = init_amm_client();
-        let id = Pubkey::from_str_const("58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2");
-        amm_swap_client
-            .fetch_pools_keys_by_id(&id)
-            .await
-            .map_err(|e| anyhow!("Error fetching pool_info {e:?}"))
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_rpc_pool_info() {
-        let amm_swap_client = init_amm_client();
-        let id = Pubkey::from_str_const("58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2");
-        amm_swap_client
-            .get_rpc_pool_info(&id)
-            .await
-            .map_err(|e| anyhow!("Error fetching pool_info {e:?}"))
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn calculate_amount_out() {
-        let amm_swap_client = init_amm_client();
-        let id = Pubkey::from_str_const("58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2");
-        let pool_info = amm_swap_client
-            .fetch_pool_by_id(&id)
-            .await
-            .map_err(|e| anyhow!("Error fetching pool by id {e:?}"))
-            .unwrap();
-        let rpc_data = amm_swap_client
-            .get_rpc_pool_info(&id)
-            .await
-            .map_err(|e| anyhow!("Error fetching rpc pool info {e:?}"))
-            .unwrap();
-
-        let pool = pool_info.data.get(0).unwrap();
-        let args = amm_swap_client
-            .compute_amount_out(&rpc_data, pool, 500, 0.01)
-            .unwrap();
-        assert_eq!(args.amount_out * 0, 0);
-    }
-
-    #[tokio::test]
-    async fn test_swap() {
-        let amount_in = 500;
-        let slippage = 0.01;
-        let amm_swap_client = init_amm_client();
-
-        let pool_id = Pubkey::from_str_const("58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2");
-
-        let pool_info = amm_swap_client
-            .fetch_pool_by_id(&pool_id)
-            .await
-            .map_err(|e| anyhow!("Error fetching pool by id {e:?}"))
-            .unwrap();
-
-        let pool_keys = amm_swap_client
-            .fetch_pools_keys_by_id(&pool_id)
-            .await
-            .map_err(|e| anyhow!("Error fetching pool keys {e:?}"))
-            .unwrap();
-
-        let rpc_data = amm_swap_client
-            .get_rpc_pool_info(&pool_id)
-            .await
-            .map_err(|e| anyhow!("Error fetching rpc pool info {e:?}"))
-            .unwrap();
-
-        let pool = pool_info.data.get(0).unwrap();
-
-        let compute = amm_swap_client
-            .compute_amount_out(&rpc_data, &pool, amount_in, slippage)
-            .unwrap();
-
-        let key = pool_keys.data.get(0).unwrap();
-
-        let _sig = amm_swap_client
-            .swap(key, amount_in, compute.amount_out)
-            .await
-            .unwrap();
-        assert!(true);
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "raydium-amm-swap"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 authors = ["Nikita Pozniakov"]
 description = "A high‑level client for interacting with Raydium AMM pools on Solana"
@@ -11,7 +11,6 @@ keywords = ["solana", "raydium"]
 [dependencies]
 solana-client = "3.1.2"
 reqwest = { version = "0.12.22", features = ["json"] }
-dotenvy = "0.15.7"
 solana-commitment-config = "3.1.0"
 solana-sdk = "3.0.0"
 tokio = "1.46.1"
