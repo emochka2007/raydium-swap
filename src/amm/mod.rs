@@ -14,7 +14,7 @@ use solana_program::{
 use std::convert::TryInto;
 use std::mem::size_of;
 
-solana_program::declare_id!("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8");
+// solana_program!("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8");
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -272,12 +272,12 @@ impl AmmInstruction {
                 })
             }
 
-            _ => return Err(ProgramError::InvalidInstructionData.into()),
+            _ => return Err(ProgramError::InvalidInstructionData),
         })
     }
 
     fn unpack_u8(input: &[u8]) -> Result<(u8, &[u8]), ProgramError> {
-        if input.len() >= 1 {
+        if !input.is_empty() {
             let (amount, rest) = input.split_at(1);
             let amount = amount
                 .get(..1)
@@ -286,7 +286,7 @@ impl AmmInstruction {
                 .ok_or(ProgramError::InvalidInstructionData)?;
             Ok((amount, rest))
         } else {
-            Err(ProgramError::InvalidInstructionData.into())
+            Err(ProgramError::InvalidInstructionData)
         }
     }
 
@@ -300,14 +300,14 @@ impl AmmInstruction {
                 .ok_or(ProgramError::InvalidInstructionData)?;
             Ok((amount, rest))
         } else {
-            Err(ProgramError::InvalidInstructionData.into())
+            Err(ProgramError::InvalidInstructionData)
         }
     }
 
     /// Packs a [AmmInstruction](enum.AmmInstruction.html) into a byte buffer.
     pub fn pack(&self) -> Result<Vec<u8>, ProgramError> {
         let mut buf = Vec::with_capacity(size_of::<Self>());
-        match &*self {
+        match self {
             Self::Initialize2(InitializeInstruction2 {
                 nonce,
                 open_time,

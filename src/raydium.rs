@@ -3,12 +3,12 @@ use crate::consts::{AMM_V4, LIQUIDITY_FEES_DENOMINATOR, LIQUIDITY_FEES_NUMERATOR
 use crate::interface::{
     PoolInfoData, PoolInfoResponse, PoolInfosResponse, PoolKey, PoolKeysResponse,
 };
-use anchor_client::anchor_lang::prelude::AccountMeta;
 use anyhow::anyhow;
 use borsh::{BorshDeserialize, BorshSerialize};
 use reqwest::Client;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
+use solana_sdk::instruction::AccountMeta;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature};
@@ -153,7 +153,7 @@ impl AmmSwapClient {
     /// # Errors
     /// Returns an error if the account data cannot be deserialized.
     pub async fn get_rpc_pool_info(&self, pool_id: &Pubkey) -> anyhow::Result<RpcPoolInfo> {
-        let account = self.rpc_client.get_account(&pool_id).await?;
+        let account = self.rpc_client.get_account(pool_id).await?;
         let data = account.data;
         let market_state = LiquidityStateLayoutV4::try_from_slice(&data)
             .map_err(|e| anyhow!("Failed to decode market state: {:?}", e))?;
@@ -404,23 +404,23 @@ impl AmmSwapClient {
             &[ix],
             Some(&self.owner.pubkey()),
             &[&self.owner],
-            recent_blockhash.clone(),
+            *recent_blockhash,
         );
 
         let sig = &self.rpc_client.send_and_confirm_transaction(&tx).await?;
         info!("Executed with Signature {sig}");
-        Ok(sig.clone())
+        Ok(*sig)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consts::SOL_MINT;
     use crate::helpers::from_bytes_to_key_pair;
     use dotenvy::dotenv;
     use std::env;
     use std::str::FromStr;
-    use crate::consts::SOL_MINT;
 
     pub fn init_amm_client() -> AmmSwapClient {
         dotenv()
@@ -508,32 +508,36 @@ mod tests {
 
         let pool_id = Pubkey::from_str_const("58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2");
 
-        let pool_info = amm_swap_client.fetch_pool_by_id(&pool_id).await.map_err(|e| anyhow!("Error fetching pool by id {e:?}")).unwrap();
+        let pool_info = amm_swap_client
+            .fetch_pool_by_id(&pool_id)
+            .await
+            .map_err(|e| anyhow!("Error fetching pool by id {e:?}"))
+            .unwrap();
 
-        let pool_keys = amm_swap_client.fetch_pools_keys_by_id(&pool_id).await.map_err(|e|anyhow!("Error fetching pool keys {e:?}")).unwrap();
+        let pool_keys = amm_swap_client
+            .fetch_pools_keys_by_id(&pool_id)
+            .await
+            .map_err(|e| anyhow!("Error fetching pool keys {e:?}"))
+            .unwrap();
 
-        let rpc_data = amm_swap_client.get_rpc_pool_info(&pool_id).await.map_err(|e|anyhow!("Error fetching rpc pool info {e:?}")).unwrap();
+        let rpc_data = amm_swap_client
+            .get_rpc_pool_info(&pool_id)
+            .await
+            .map_err(|e| anyhow!("Error fetching rpc pool info {e:?}"))
+            .unwrap();
 
         let pool = pool_info.data.get(0).unwrap();
 
         let compute = amm_swap_client
-            .compute_amount_out(
-                &rpc_data,
-                &pool,
-                amount_in,
-                slippage,
-            ).unwrap();
+            .compute_amount_out(&rpc_data, &pool, amount_in, slippage)
+            .unwrap();
 
         let key = pool_keys.data.get(0).unwrap();
 
         let _sig = amm_swap_client
-            .swap(
-                key,
-                amount_in,
-                compute.amount_out,
-            )
-            .await.unwrap();
+            .swap(key, amount_in, compute.amount_out)
+            .await
+            .unwrap();
         assert!(true);
-
     }
 }
