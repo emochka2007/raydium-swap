@@ -1,7 +1,9 @@
 use crate::amm::{AmmInstruction, SwapInstructionBaseIn};
-use crate::consts::{AMM_V4, LIQUIDITY_FEES_DENOMINATOR, LIQUIDITY_FEES_NUMERATOR};
+use crate::clmm::{clmm_instructions, clmm_utils};
+use crate::consts::{AMM_V4, CLMM, LIQUIDITY_FEES_DENOMINATOR, LIQUIDITY_FEES_NUMERATOR};
 use crate::interface::{
-    PoolInfoData, PoolInfoResponse, PoolInfosResponse, PoolKey, PoolKeysResponse,
+    ClmmPoolInfosResponse, ClmmSinglePoolInfo, ClmmSwapParams, Pool, PoolInfosByType,
+    PoolInfosResponse, PoolKeys, PoolType, SinglePoolInfo, SinglePoolInfoByType, SinglePoolKey,
 };
 use anyhow::{Context, anyhow};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -121,8 +123,8 @@ pub struct AmmSwapClient {
     base_url: String,
     owner: Keypair,
     rpc_client: RpcClient,
-    mint_1: Pubkey,
-    mint_2: Pubkey,
+    // mint_1: Pubkey,
+    // mint_2: Pubkey,
 }
 
 impl AmmSwapClient {
@@ -134,14 +136,12 @@ impl AmmSwapClient {
     /// - `mint_1`: the base token mint.
     /// - `mint_2`: the quote token mint.
     /// - `owner`: signer for transaction execution.
-    pub fn new(rpc_client: RpcClient, mint_1: Pubkey, mint_2: Pubkey, owner: Keypair) -> Self {
+    pub fn new(rpc_client: RpcClient, owner: Keypair) -> Self {
         let reqwest_client = Client::new();
         let base_url = "https://api-v3.raydium.io".to_string();
         Self {
             rpc_client,
             base_url,
-            mint_1,
-            mint_2,
             owner,
             reqwest_client,
         }
@@ -153,6 +153,19 @@ impl AmmSwapClient {
         query: Option<&[(&str, &str)]>,
     ) -> anyhow::Result<T> {
         let url = format!("{}{}", self.base_url, path.unwrap_or_default());
+        println!("{url}");
+        println!("{:?}", query);
+        let response = self
+            .reqwest_client
+            .get(&url)
+            .query(query.unwrap_or(&[]))
+            .send()
+            .await
+            .context("Raydium amm get failed")?
+            .error_for_status()
+            .context("Raydium non-200")?;
+        println!("{:?}", response.text().await);
+
         let response = self
             .reqwest_client
             .get(&url)
@@ -167,10 +180,10 @@ impl AmmSwapClient {
     }
 
     /// Fetch raw pool account keys by pool ID via HTTP API.
-    pub async fn fetch_pools_keys_by_id(&self, id: &Pubkey) -> anyhow::Result<PoolKeysResponse> {
+    pub async fn fetch_pools_keys_by_id(&self, id: &Pubkey) -> anyhow::Result<PoolKeys> {
         let id = id.to_string();
         let headers = ("ids", id.as_str());
-        let resp: PoolKeysResponse = self.get(Some("/pools/key/ids"), Some(&[headers])).await?;
+        let resp: PoolKeys = self.get(Some("/pools/key/ids"), Some(&[headers])).await?;
         Ok(resp)
     }
 
@@ -208,10 +221,25 @@ impl AmmSwapClient {
     }
 
     /// Fetch pool metadata (price, TVL, stats) by ID via HTTP API.
-    pub async fn fetch_pool_by_id(&self, id: &Pubkey) -> anyhow::Result<PoolInfoResponse> {
+    pub async fn fetch_pool_by_id(
+        &self,
+        id: &Pubkey,
+        pool_type: &PoolType,
+    ) -> anyhow::Result<SinglePoolInfoByType> {
         let id = id.to_string();
         let headers = ("ids", id.as_str());
-        self.get(Some("/pools/info/ids"), Some(&[headers])).await
+        match pool_type {
+            PoolType::Standard => {
+                let resp: SinglePoolInfo =
+                    self.get(Some("/pools/info/ids"), Some(&[headers])).await?;
+                Ok(SinglePoolInfoByType::Standard(resp))
+            }
+            PoolType::Concentrated => {
+                let resp: ClmmSinglePoolInfo =
+                    self.get(Some("/pools/info/ids"), Some(&[headers])).await?;
+                Ok(SinglePoolInfoByType::Concentrated(resp))
+            }
+        }
     }
 
     /// List pools for the given pair via HTTP API.
@@ -220,19 +248,40 @@ impl AmmSwapClient {
     /// - `page_size`, `page`: pagination.
     pub async fn fetch_pool_info(
         &self,
-        pool_type: &str,
-        page_size: u32,
-        page: u32,
-    ) -> anyhow::Result<PoolInfosResponse> {
-        let pool_sort_field = "default";
-        let sort_type = "desc";
-        let url = format!(
-            "https://api-v3.raydium.io/pools/info/mint?mint1={}&mint2={}&poolType={}&poolSortField={}&sortType={}&pageSize={}&page={}",
-            self.mint_1, self.mint_2, pool_type, pool_sort_field, sort_type, page_size, page
-        );
-        let client = Client::new();
-        let resp = client.get(url).send().await?;
-        Ok(resp.json().await?)
+        mint_a: &str,
+        mint_b: &str,
+        pool_type: &PoolType,
+        page_size: Option<u32>,
+        page: Option<u32>,
+        pool_sort_field: Option<&str>,
+        sort_type: Option<&str>,
+    ) -> anyhow::Result<PoolInfosByType> {
+        let page_size_str = page_size.unwrap_or(100).to_string();
+        let page_str = page.unwrap_or(1).to_string();
+        let pool_type_str = pool_type.to_string();
+        let pool_sort_field = pool_sort_field.unwrap_or("default");
+        let sort_type = sort_type.unwrap_or("desc");
+        let headers = [
+            ("mint1", mint_a),
+            ("mint2", mint_b),
+            ("poolType", pool_type_str.as_str()),
+            ("poolSortField", pool_sort_field),
+            ("sortType", sort_type),
+            ("pageSize", page_size_str.as_str()),
+            ("page", page_str.as_str()),
+        ];
+        match pool_type {
+            PoolType::Standard => {
+                let resp: PoolInfosResponse =
+                    self.get(Some("/pools/info/mint"), Some(&headers)).await?;
+                Ok(PoolInfosByType::Standard(resp))
+            }
+            PoolType::Concentrated => {
+                let resp: ClmmPoolInfosResponse =
+                    self.get(Some("/pools/info/mint"), Some(&headers)).await?;
+                Ok(PoolInfosByType::Concentrated(resp))
+            }
+        }
     }
 
     /// Compute a swap quote (amount out, fee, slippage).
@@ -241,12 +290,12 @@ impl AmmSwapClient {
     ///
     /// - `rpc_pool_info`: on‑chain reserves.
     /// - `pool_info`: off‑chain pool metadata.
-    /// - `amount_in`: amount of base token to swap (in smallest units).
+    /// - `amount_in`: amount of base token to swap (in the smallest units).
     /// - `slippage`: tolerance (e.g. `0.005` for 0.5%).
     pub fn compute_amount_out(
         &self,
         rpc_pool_info: &RpcPoolInfo,
-        pool_info: &PoolInfoData,
+        pool_info: &Pool,
         amount_in: u64,
         slippage: f64,
     ) -> anyhow::Result<ComputeAmountOutResult> {
@@ -373,14 +422,19 @@ impl AmmSwapClient {
     ///   17. `[signer]` User wallet Account
     pub async fn swap(
         &self,
-        pool_keys: &PoolKey,
+        pool_keys: &SinglePoolKey,
+        mint_a: &str,
+        mint_b: &str,
         amount_in: u64,
         amount_out: u64, // out.amount_out means amount 'without' slippage
     ) -> anyhow::Result<Signature> {
+        let mint_a = Pubkey::try_from(mint_a)?;
+        let mint_b = Pubkey::try_from(mint_b)?;
+
         let amm_program = Pubkey::from_str_const(AMM_V4);
 
-        let user_token_source = self.get_or_create_token_program(self.mint_1).await?;
-        let user_token_destination = self.get_or_create_token_program(self.mint_2).await?;
+        let user_token_source = self.get_or_create_token_program(mint_a).await?;
+        let user_token_destination = self.get_or_create_token_program(mint_b).await?;
 
         info!(
             "Executing swap from {:?} to {:?}",
@@ -436,4 +490,74 @@ impl AmmSwapClient {
         info!("Executed with Signature {sig}");
         Ok(*sig)
     }
+
+    // pub async fn swap_clmm(&self, params: ClmmSwapParams) {
+    //     let base_in = !params.base_out;
+    //     let tickarray_bitmap_extension = Pubkey::find_program_address(
+    //         &[
+    //             raydium_amm_v3::states::POOL_TICK_ARRAY_BITMAP_SEED.as_bytes(),
+    //             params.pool_id.to_bytes().as_ref(),
+    //         ],
+    //         &Pubkey::from_str_const(CLMM),
+    //     )
+    //     .0;
+    //     let result = clmm_utils::calculate_swap_change(
+    //         &self.rpc_client,
+    //         config.clmm_program(),
+    //         pool_id,
+    //         tickarray_bitmap_extension,
+    //         user_input_token,
+    //         amount_specified,
+    //         limit_price,
+    //         base_in,
+    //         config.slippage(),
+    //     )?;
+    //
+    //     let mut instructions = Vec::new();
+    //     let user_output_token = if let Some(user_output_token) = user_output_token {
+    //         user_output_token
+    //     } else {
+    //         let create_user_output_token_instr = token::create_ata_token_or_not(
+    //             &payer_pubkey,
+    //             &result.output_vault_mint,
+    //             &payer_pubkey,
+    //             Some(&result.output_token_program),
+    //         );
+    //         instructions.extend(create_user_output_token_instr);
+    //
+    //         spl_associated_token_account::get_associated_token_address_with_program_id(
+    //             &payer_pubkey,
+    //             &result.output_vault_mint,
+    //             &result.output_token_program,
+    //         )
+    //     };
+    //
+    //     let mut remaining_accounts = Vec::new();
+    //     remaining_accounts.push(AccountMeta::new_readonly(tickarray_bitmap_extension, false));
+    //     let mut accounts = result
+    //         .remaining_tick_array_keys
+    //         .into_iter()
+    //         .map(|tick_array_address| AccountMeta::new(tick_array_address, false))
+    //         .collect();
+    //     remaining_accounts.append(&mut accounts);
+    //     let swap_instr = clmm_instructions::swap_v2_instr(
+    //         &config,
+    //         result.pool_amm_config,
+    //         result.pool_id,
+    //         result.input_vault,
+    //         result.output_vault,
+    //         result.pool_observation,
+    //         result.user_input_token,
+    //         user_output_token,
+    //         result.input_vault_mint,
+    //         result.output_vault_mint,
+    //         remaining_accounts,
+    //         result.amount,
+    //         result.other_amount_threshold,
+    //         result.sqrt_price_limit_x64,
+    //         result.is_base_input,
+    //     )?;
+    //     instructions.extend(swap_instr);
+    //     return Ok(Some(instructions));
+    // }
 }
