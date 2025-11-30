@@ -2,6 +2,7 @@ use crate::common::{TEN_THOUSAND, TransferFeeInfo};
 use anchor_client::anchor_lang::err;
 use anchor_lang::{AccountDeserialize, error};
 use anyhow::{Result, format_err};
+use solana_address::Address;
 use solana_client::rpc_client::RpcClient;
 use solana_program_pack::Pack as SolanaProgramPack;
 use solana_sdk::{account::Account as CliAccount, pubkey::Pubkey, signer::keypair::Keypair};
@@ -45,27 +46,54 @@ pub enum TokenAccountState<'a> {
     SplToken(spl_token::state::Account),
     SplToken2022(StateWithExtensions<'a, Account>),
 }
-pub fn unpack_token(token_data: &[u8]) -> Result<TokenAccountState> {
-    // Try to unpack legacy
-    match unpack_spl(token_data.clone()) {
-        Ok(info) => Ok(TokenAccountState::SplToken(info)),
-        Err(e) => {
-            warn!("Error decoding legacy, trying spl2022 {:?}", e);
-            Ok(TokenAccountState::SplToken2022(unpack_spl_2022(
-                token_data,
-            )?))
-        }
+pub fn unpack_token<'a>(owner: &Address, token_data: &'a [u8]) -> Result<TokenAccountState<'a>> {
+    if owner == &spl_token::id() {
+        Ok(TokenAccountState::SplToken(unpack_spl(token_data)?))
+    } else if solana_pubkey::Pubkey::from(owner.to_bytes()) == spl_token_2022::id() {
+        Ok(TokenAccountState::SplToken2022(unpack_spl_2022(
+            token_data,
+        )?))
+    } else {
+        unreachable!()
     }
+    // Try to unpack legacy SPL token account data first, then fall back to SPL 2022.
+    // match unpack_spl(token_data) {
+    //     Ok(info) => Ok(TokenAccountState::SplToken(info)),
+    //     Err(e) => {
+    //         warn!("Error decoding legacy, trying spl2022 {:?}", e);
+    //         Ok(TokenAccountState::SplToken2022(unpack_spl_2022(
+    //             token_data,
+    //         )?))
+    //     }
+    // }
 }
 
 pub fn unpack_spl(token_data: &[u8]) -> Result<spl_token::state::Account> {
-    let token = spl_token::state::Account::unpack_from_slice(token_data)?.;
-    Ok(token)
+    // Avoid panics inside the SPL token library if we accidentally pass
+    // mint data (82 bytes) or any other shorter buffer instead of a
+    // 165‑byte token account.
+    if token_data.len() < spl_token::state::Account::LEN {
+        return Err(format_err!(
+            "invalid spl-token account length: expected at least {}, got {}",
+            spl_token::state::Account::LEN,
+            token_data.len()
+        ));
+    }
+    Ok(spl_token::state::Account::unpack_from_slice(token_data)?)
 }
 
 pub fn unpack_spl_2022(token_data: &[u8]) -> Result<StateWithExtensions<Account>> {
-    let token = StateWithExtensions::<Account>::unpack(token_data)?;
-    Ok(token)
+    // Guard against accidentally passing a mint (82 bytes) or other
+    // non‑token account data into the SPL 2022 `Account` unpacker,
+    // which would otherwise panic inside the underlying library.
+    if token_data.len() < spl_token_2022::state::Account::LEN {
+        return Err(format_err!(
+            "invalid spl-token-2022 token account length: expected at least {}, got {}",
+            spl_token_2022::state::Account::LEN,
+            token_data.len()
+        ));
+    }
+    Ok(StateWithExtensions::<Account>::unpack(token_data)?)
 }
 
 pub fn unpack_mint(token_data: &[u8]) -> Result<StateWithExtensions<Mint>> {

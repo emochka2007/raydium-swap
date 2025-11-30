@@ -14,17 +14,17 @@ use crate::libraries::{
 use crate::states::{
     AmmConfig, PoolState, TICK_ARRAY_SEED, TickArrayBitmapExtension, TickArrayState, TickState,
 };
+use anchor_lang::solana_program::program_option::COption as AnchorCOption;
 use anyhow::{Result, anyhow};
 use arrayref::array_ref;
 use solana_address::Address;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_pubkey::Pubkey;
-use solana_sdk::program_option::COption;
+use spl_token_2022::state::AccountState;
 use std::{
     collections::VecDeque,
     ops::{DerefMut, Neg},
 };
-use spl_token_2022::state::AccountState;
 
 pub async fn create_pool_price(
     rpc_client: &RpcClient,
@@ -235,18 +235,30 @@ pub async fn calculate_swap_change(
     ] = array_ref![rsps, 0, 5];
     let mint0_token_program = mint0_account.as_ref().unwrap().owner;
     let mint1_token_program = mint1_account.as_ref().unwrap().owner;
-    let user_input_state = match unpack_token(&user_input_account.as_ref().unwrap().data)? {
+    let input_mint_owner = user_input_account.as_ref().unwrap().owner;
+    let user_input_state = match unpack_token(
+        &input_mint_owner,
+        &user_input_account.as_ref().unwrap().data,
+    )? {
         TokenAccountState::SplToken(info) => {
-                spl_token_2022::state::Account {
-                    mint: solana_pubkey::Pubkey::from(info.mint.to_bytes()),
-                    owner: solana_pubkey::Pubkey::from(info.owner.to_bytes()),
-                    amount,
-                    delegate: COption::None<_>,
-                    state: AccountState::Initialized,
-                    is_native: info.is_native,
-                    delegated_amount: info.delegated_amount,
-                    close_authority: COption::None,
-                }
+            // Convert legacy SPL token account representation into the SPL 2022
+            // `Account` type, carefully translating between different `COption`
+            // definitions from separate Solana crates.
+            use spl_token::solana_program::program_option::COption as SplCOption;
+
+            spl_token_2022::state::Account {
+                mint: solana_pubkey::Pubkey::from(info.mint.to_bytes()),
+                owner: solana_pubkey::Pubkey::from(info.owner.to_bytes()),
+                amount,
+                delegate: AnchorCOption::None,
+                state: AccountState::Initialized,
+                is_native: match info.is_native {
+                    SplCOption::Some(v) => AnchorCOption::Some(v),
+                    SplCOption::None => AnchorCOption::None,
+                },
+                delegated_amount: info.delegated_amount,
+                close_authority: AnchorCOption::None,
+            }
         }
         TokenAccountState::SplToken2022(state) => state.base,
     };

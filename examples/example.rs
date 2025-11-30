@@ -5,8 +5,11 @@ use raydium_amm_swap::interface::{
     AmmPool, ClmmPool, ClmmSwapParams, PoolInfosByType, PoolKeys, PoolType, SinglePoolInfo,
     SinglePoolInfoByType,
 };
+use solana_address::Address;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::signature::Signer;
+use spl_associated_token_account::get_associated_token_address;
 use std::env;
 use std::str::FromStr;
 use tracing::info;
@@ -22,7 +25,10 @@ async fn main() {
     let mint_b = env::var("MINT_2").unwrap();
     let rpc_client = RpcClient::new(url);
     let owner = env::var("KEYPAIR").expect("KEYPAIR env is not presented");
-    let amm_swap_client = AmmSwapClient::new(rpc_client, from_bytes_to_key_pair(owner));
+    let keypair = from_bytes_to_key_pair(owner);
+    let owner_pubkey = keypair.pubkey();
+    println!("Owner address {}", owner_pubkey.to_string());
+    let amm_swap_client = AmmSwapClient::new(rpc_client, keypair);
 
     // Choose which kind of pool to query.
     let pool_type = PoolType::Concentrated;
@@ -79,10 +85,19 @@ async fn main() {
                 .unwrap();
             let key = pool_keys.data.get(0).unwrap();
             info!("Standard pool key: {:?}", key);
+            let ata_a = solana_pubkey::Pubkey::from(
+                get_associated_token_address(&owner_pubkey, &Address::from_str_const(&mint_a))
+                    .to_bytes(),
+            );
+            let ata_b = solana_pubkey::Pubkey::from(
+                get_associated_token_address(&owner_pubkey, &Address::from_str_const(&mint_b))
+                    .to_bytes(),
+            );
+            println!("ata_a {}", ata_a.to_string());
             let keys = ClmmSwapParams {
                 pool_id: solana_pubkey::Pubkey::from_str(&key.id).unwrap(),
-                user_input_token: solana_pubkey::Pubkey::from_str(&mint_a).unwrap(),
-                user_output_token: solana_pubkey::Pubkey::from_str(&mint_b).unwrap(),
+                user_input_token: ata_a,
+                user_output_token: ata_b,
                 amount_specified: amount_in,
                 limit_price: None,
                 // if false -> amount_in
