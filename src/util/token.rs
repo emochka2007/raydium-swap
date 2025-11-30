@@ -252,19 +252,3 @@ pub fn is_supported_mint(mint_account: &InterfaceAccount<Mint>) -> Result<bool> 
     }
     Ok(true)
 }
-
-pub fn create_position_nft_mint_with_extensions<'info>(
-    payer: &Signer<'info>,
-    position_nft_mint: &AccountInfo<'info>,
-    mint_authority: &AccountInfo<'info>,
-    mint_close_authority: &AccountInfo<'info>,
-    system_program: &Program<'info, System>,
-    token_2022_program: &Program<'info, Token2022>,
-    with_matedata: bool,
-) -> Result<()> {
-    // This helper relies on on-chain-only types and
-    // Solana token-2022 extension APIs that are not
-    // compatible with this client crate's dependency
-    // versions. Treat it as unsupported on the client.
-    Err(ErrorCode::NotSupportMint.into())
-}

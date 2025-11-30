@@ -1,30 +1,20 @@
 use crate::common::{TEN_THOUSAND, TransferFeeInfo};
-use anchor_lang::AccountDeserialize;
+use anchor_client::anchor_lang::err;
+use anchor_lang::{AccountDeserialize, error};
 use anyhow::{Result, format_err};
-use solana_account_decoder::{
-    UiAccountData,
-    parse_token::{TokenAccountType, UiAccountState},
-};
-use solana_client::{rpc_client::RpcClient, rpc_request::TokenAccountsFilter};
-use solana_program_pack::Pack;
+use solana_client::rpc_client::RpcClient;
+use solana_program_pack::Pack as SolanaProgramPack;
 use solana_sdk::{account::Account as CliAccount, pubkey::Pubkey, signer::keypair::Keypair};
+use spl_token::solana_program::program_pack::Pack;
 use spl_token_2022::{
     extension::{
-        BaseState, BaseStateWithExtensions, ExtensionType, StateWithExtensions,
-        confidential_transfer::{ConfidentialTransferAccount, ConfidentialTransferMint},
-        cpi_guard::CpiGuard,
-        default_account_state::DefaultAccountState,
-        immutable_owner::ImmutableOwner,
-        interest_bearing_mint::InterestBearingConfig,
-        memo_transfer::MemoTransfer,
-        mint_close_authority::MintCloseAuthority,
-        non_transferable::{NonTransferable, NonTransferableAccount},
-        permanent_delegate::PermanentDelegate,
-        transfer_fee::{MAX_FEE_BASIS_POINTS, TransferFeeAmount, TransferFeeConfig},
+        BaseState, BaseStateWithExtensions, StateWithExtensions,
+        transfer_fee::{MAX_FEE_BASIS_POINTS, TransferFeeConfig},
     },
     state::{Account, Mint},
 };
 use std::convert::TryFrom;
+use tracing::warn;
 
 pub fn amount_with_slippage(amount: u64, slippage_bps: u64, up_towards: bool) -> Result<u64> {
     let amount = amount as u128;
@@ -51,8 +41,30 @@ pub fn read_keypair_file(s: &str) -> Result<Keypair> {
         .map_err(|_| format_err!("failed to read keypair from {}", s))
 }
 
-pub fn unpack_token(token_data: &[u8]) -> Result<StateWithExtensions<Account>> {
-    let token = StateWithExtensions::<Account>::unpack(&token_data)?;
+pub enum TokenAccountState<'a> {
+    SplToken(spl_token::state::Account),
+    SplToken2022(StateWithExtensions<'a, Account>),
+}
+pub fn unpack_token(token_data: &[u8]) -> Result<TokenAccountState> {
+    // Try to unpack legacy
+    match unpack_spl(token_data.clone()) {
+        Ok(info) => Ok(TokenAccountState::SplToken(info)),
+        Err(e) => {
+            warn!("Error decoding legacy, trying spl2022 {:?}", e);
+            Ok(TokenAccountState::SplToken2022(unpack_spl_2022(
+                token_data,
+            )?))
+        }
+    }
+}
+
+pub fn unpack_spl(token_data: &[u8]) -> Result<spl_token::state::Account> {
+    let token = spl_token::state::Account::unpack_from_slice(token_data)?.;
+    Ok(token)
+}
+
+pub fn unpack_spl_2022(token_data: &[u8]) -> Result<StateWithExtensions<Account>> {
+    let token = StateWithExtensions::<Account>::unpack(token_data)?;
     Ok(token)
 }
 
@@ -132,7 +144,7 @@ pub fn get_pool_mints_transfer_fee(
 }
 
 /// Calculate the fee for output amount
-pub fn get_transfer_inverse_fee<S: BaseState + Pack>(
+pub fn get_transfer_inverse_fee<S: BaseState + SolanaProgramPack>(
     account_state: &StateWithExtensions<S>,
     epoch: u64,
     post_fee_amount: u64,
@@ -153,7 +165,7 @@ pub fn get_transfer_inverse_fee<S: BaseState + Pack>(
 }
 
 /// Calculate the fee for input amount
-pub fn get_transfer_fee<S: BaseState + Pack>(
+pub fn get_transfer_fee<S: BaseState + SolanaProgramPack>(
     account_state: &StateWithExtensions<S>,
     epoch: u64,
     pre_fee_amount: u64,

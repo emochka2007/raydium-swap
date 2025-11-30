@@ -1,7 +1,10 @@
 use anyhow::anyhow;
-use raydium_amm_swap::client::AmmSwapClient;
+use raydium_amm_swap::amm::client::AmmSwapClient;
 use raydium_amm_swap::helpers::from_bytes_to_key_pair;
-use raydium_amm_swap::interface::{PoolInfosByType, PoolType, SinglePoolInfoByType};
+use raydium_amm_swap::interface::{
+    AmmPool, ClmmPool, ClmmSwapParams, PoolInfosByType, PoolKeys, PoolType, SinglePoolInfo,
+    SinglePoolInfoByType,
+};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
 use std::env;
@@ -43,36 +46,56 @@ async fn main() {
         .await
         .unwrap();
 
-    let pool_keys = amm_swap_client
-        .fetch_pools_keys_by_id(&pool_id)
-        .await
-        .unwrap();
-
-    let rpc_data = amm_swap_client
-        .get_rpc_pool_info(&pool_id)
-        .await
-        .map_err(|e| anyhow!("Error fetching rpc pool info {e:?}"))
-        .unwrap();
-
     // For now, compute_amount_out & swap are only wired for standard AMM v4.
-    if let (PoolType::Standard, SinglePoolInfoByType::Standard(info)) = (pool_type, &pool_info) {
-        let pool = info.data.get(0).unwrap();
-        let compute = amm_swap_client
-            .compute_amount_out(&rpc_data, pool, amount_in, slippage)
-            .unwrap();
+    match (pool_type, pool_info) {
+        (PoolType::Standard, SinglePoolInfoByType::Standard(info)) => {
+            let pool_keys: PoolKeys<AmmPool> = amm_swap_client
+                .fetch_pools_keys_by_id(&pool_id)
+                .await
+                .unwrap();
 
-        let key = pool_keys.data.get(0).unwrap();
-        info!("Standard pool key: {:?}", key);
+            let rpc_data = amm_swap_client
+                .get_rpc_pool_info(&pool_id)
+                .await
+                .map_err(|e| anyhow!("Error fetching rpc pool info {e:?}"))
+                .unwrap();
+            let pool = info.data.get(0).unwrap();
+            let compute = amm_swap_client
+                .compute_amount_out(&rpc_data, pool, amount_in, slippage)
+                .unwrap();
 
-        // let _sig = amm_swap_client
-        //     .swap(key, &mint_a, &mint_b, amount_in, compute.amount_out)
-        //     .await
-        //     .unwrap();
-        let _ = compute; // silence unused warning when swap is commented
-    } else {
-        info!(
-            "CLMM single‑pool info fetched successfully; CLMM math not yet implemented in this example."
-        );
+            let key = pool_keys.data.get(0).unwrap();
+            info!("Standard pool key: {:?}", key);
+
+            let _sig = amm_swap_client
+                .swap(key, &mint_a, &mint_b, amount_in, compute.amount_out)
+                .await
+                .unwrap();
+        }
+        (PoolType::Concentrated, SinglePoolInfoByType::Concentrated(info)) => {
+            let pool_keys: PoolKeys<ClmmPool> = amm_swap_client
+                .fetch_pools_keys_by_id(&pool_id)
+                .await
+                .unwrap();
+            let key = pool_keys.data.get(0).unwrap();
+            info!("Standard pool key: {:?}", key);
+            let keys = ClmmSwapParams {
+                pool_id: solana_pubkey::Pubkey::from_str(&key.id).unwrap(),
+                user_input_token: solana_pubkey::Pubkey::from_str(&mint_a).unwrap(),
+                user_output_token: solana_pubkey::Pubkey::from_str(&mint_b).unwrap(),
+                amount_specified: amount_in,
+                limit_price: None,
+                // if false -> amount_in
+                base_out: false,
+                slippage_bps: 100,
+            };
+
+            let _sig = amm_swap_client.swap_clmm(keys).await.unwrap();
+
+            info!(
+                "CLMM single‑pool info fetched successfully; CLMM math not yet implemented in this example."
+            );
+        }
+        _ => {}
     }
-    assert!(true);
 }

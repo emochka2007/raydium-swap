@@ -3,8 +3,8 @@ use crate::clmm::{
     StepComputations, SwapState, price_to_sqrt_price_x64, tick_with_spacing,
 };
 use crate::common::{
-    amount_with_slippage, common_utils, deserialize_anchor_account, get_pool_mints_inverse_fee,
-    get_transfer_fee, rpc, unpack_mint, unpack_token,
+    TokenAccountState, amount_with_slippage, common_utils, deserialize_anchor_account,
+    get_pool_mints_inverse_fee, get_transfer_fee, rpc, unpack_mint, unpack_spl_2022, unpack_token,
 };
 use crate::libraries::{
     MAX_SQRT_PRICE_X64, MAX_TICK, MIN_SQRT_PRICE_X64, MIN_TICK, add_delta, compute_swap_step,
@@ -19,10 +19,12 @@ use arrayref::array_ref;
 use solana_address::Address;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_pubkey::Pubkey;
+use solana_sdk::program_option::COption;
 use std::{
     collections::VecDeque,
     ops::{DerefMut, Neg},
 };
+use spl_token_2022::state::AccountState;
 
 pub async fn create_pool_price(
     rpc_client: &RpcClient,
@@ -233,7 +235,22 @@ pub async fn calculate_swap_change(
     ] = array_ref![rsps, 0, 5];
     let mint0_token_program = mint0_account.as_ref().unwrap().owner;
     let mint1_token_program = mint1_account.as_ref().unwrap().owner;
-    let user_input_state = unpack_token(&user_input_account.as_ref().unwrap().data)?;
+    let user_input_state = match unpack_token(&user_input_account.as_ref().unwrap().data)? {
+        TokenAccountState::SplToken(info) => {
+                spl_token_2022::state::Account {
+                    mint: solana_pubkey::Pubkey::from(info.mint.to_bytes()),
+                    owner: solana_pubkey::Pubkey::from(info.owner.to_bytes()),
+                    amount,
+                    delegate: COption::None<_>,
+                    state: AccountState::Initialized,
+                    is_native: info.is_native,
+                    delegated_amount: info.delegated_amount,
+                    close_authority: COption::None,
+                }
+        }
+        TokenAccountState::SplToken2022(state) => state.base,
+    };
+    // let user_input_state: Account = unpack_spl_2022(&user_input_account.as_ref().unwrap().data)?;
     let mint0_state = unpack_mint(&mint0_account.as_ref().unwrap().data)?;
     let mint1_state = unpack_mint(&mint1_account.as_ref().unwrap().data)?;
     let tickarray_bitmap_extension_state = deserialize_anchor_account::<TickArrayBitmapExtension>(
@@ -250,7 +267,7 @@ pub async fn calculate_swap_change(
         output_vault_mint,
         input_token_program,
         output_token_program,
-    ) = if user_input_state.base.mint == pool_state.token_mint_0 {
+    ) = if user_input_state.mint == pool_state.token_mint_0 {
         (
             true,
             pool_state.token_vault_0,
@@ -260,7 +277,7 @@ pub async fn calculate_swap_change(
             mint0_token_program,
             mint1_token_program,
         )
-    } else if user_input_state.base.mint == pool_state.token_mint_1 {
+    } else if user_input_state.mint == pool_state.token_mint_1 {
         (
             false,
             pool_state.token_vault_1,

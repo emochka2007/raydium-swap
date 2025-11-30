@@ -53,3 +53,4 @@ solana-program = "<1.17.0"
 uint = { git = "https://github.com/raydium-io/parity-common", package = "uint" }
 bytemuck = { version = "1.19.0", features = ["derive", "min_const_generics"] }
 solana-program-pack = "2.2.1"
+solana-program-option = "2.2.1"

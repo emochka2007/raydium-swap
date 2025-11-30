@@ -1,16 +1,16 @@
 use crate::amm::{AmmInstruction, SwapInstructionBaseIn};
-use crate::clmm::{clmm_instructions, clmm_utils};
+use crate::clmm::clmm_utils;
 use crate::common::create_ata_token_or_not;
 use crate::consts::{AMM_V4, CLMM, LIQUIDITY_FEES_DENOMINATOR, LIQUIDITY_FEES_NUMERATOR};
 use crate::interface::{
-    ClmmPoolInfosResponse, ClmmSinglePoolInfo, ClmmSwapParams, Pool, PoolInfosByType,
-    PoolInfosResponse, PoolKeys, PoolType, SinglePoolInfo, SinglePoolInfoByType, SinglePoolKey,
+    AmmPool, ClmmPoolInfosResponse, ClmmSinglePoolInfo, ClmmSwapParams, PoolInfosByType,
+    PoolInfosResponse, PoolKeys, PoolType, SinglePoolInfo, SinglePoolInfoByType,
 };
-use anchor_client::Cluster;
+use anchor_lang::Discriminator;
+use anchor_spl::memo::spl_memo;
 use anyhow::{Context, anyhow, format_err};
 use borsh::{BorshDeserialize, BorshSerialize};
-use raydium_amm_v3::accounts::SwapSingleV2;
-use raydium_amm_v3::instruction::SwapV2;
+use raydium_amm_v3::instruction;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use solana_address::Address;
@@ -23,7 +23,6 @@ use solana_sdk::signature::{Keypair, Signature};
 use solana_sdk::signer::Signer;
 use solana_sdk::transaction::Transaction;
 use solana_system_interface::instruction::transfer;
-use std::rc::Rc;
 use tracing::log::info;
 use tracing::{debug, warn};
 
@@ -186,10 +185,13 @@ impl AmmSwapClient {
     }
 
     /// Fetch raw pool account keys by pool ID via HTTP API.
-    pub async fn fetch_pools_keys_by_id(&self, id: &Pubkey) -> anyhow::Result<PoolKeys> {
+    pub async fn fetch_pools_keys_by_id<T: DeserializeOwned>(
+        &self,
+        id: &Pubkey,
+    ) -> anyhow::Result<PoolKeys<T>> {
         let id = id.to_string();
         let headers = ("ids", id.as_str());
-        let resp: PoolKeys = self.get(Some("/pools/key/ids"), Some(&[headers])).await?;
+        let resp: PoolKeys<T> = self.get(Some("/pools/key/ids"), Some(&[headers])).await?;
         Ok(resp)
     }
 
@@ -301,7 +303,7 @@ impl AmmSwapClient {
     pub fn compute_amount_out(
         &self,
         rpc_pool_info: &RpcPoolInfo,
-        pool_info: &Pool,
+        pool_info: &AmmPool,
         amount_in: u64,
         slippage: f64,
     ) -> anyhow::Result<ComputeAmountOutResult> {
@@ -428,7 +430,7 @@ impl AmmSwapClient {
     ///   17. `[signer]` User wallet Account
     pub async fn swap(
         &self,
-        pool_keys: &SinglePoolKey,
+        pool_keys: &AmmPool,
         mint_a: &str,
         mint_b: &str,
         amount_in: u64,
@@ -442,7 +444,7 @@ impl AmmSwapClient {
 
     async fn swap_amm(
         &self,
-        pool_keys: &SinglePoolKey,
+        pool_keys: &AmmPool,
         mint_a: Address,
         mint_b: Address,
         amount_in: u64,
@@ -545,26 +547,27 @@ impl AmmSwapClient {
         .await?;
 
         let mut instructions = Vec::new();
-        let user_output_token = if let Some(user_output_token) = user_output_token {
-            Pubkey::from(user_output_token.to_bytes())
-        } else {
-            let pubkey_output_vault_mint = &Pubkey::from(result.output_vault_mint.to_bytes());
-            let pubkey_output_token_program = &Pubkey::from(result.output_token_program.to_bytes());
-
-            let create_user_output_token_instr = create_ata_token_or_not(
-                &self.owner.pubkey(),
-                pubkey_output_vault_mint,
-                &self.owner.pubkey(),
-                Some(pubkey_output_token_program),
-            );
-            instructions.extend(create_user_output_token_instr);
-
-            spl_associated_token_account::get_associated_token_address_with_program_id(
-                &self.owner.pubkey(),
-                pubkey_output_vault_mint,
-                pubkey_output_token_program,
-            )
-        };
+        let user_output_token = Pubkey::from(user_output_token.to_bytes());
+        // let user_output_token = if let Some(user_output_token) = user_output_token {
+        //     Pubkey::from(user_output_token.to_bytes())
+        // } else {
+        //     let pubkey_output_vault_mint = &Pubkey::from(result.output_vault_mint.to_bytes());
+        //     let pubkey_output_token_program = &Pubkey::from(result.output_token_program.to_bytes());
+        //
+        //     let create_user_output_token_instr = create_ata_token_or_not(
+        //         &self.owner.pubkey(),
+        //         pubkey_output_vault_mint,
+        //         &self.owner.pubkey(),
+        //         Some(pubkey_output_token_program),
+        //     );
+        //     instructions.extend(create_user_output_token_instr);
+        //
+        //     spl_associated_token_account::get_associated_token_address_with_program_id(
+        //         &self.owner.pubkey(),
+        //         pubkey_output_vault_mint,
+        //         pubkey_output_token_program,
+        //     )
+        // };
 
         let mut remaining_accounts = Vec::new();
         remaining_accounts.push(AccountMeta::new_readonly(
@@ -603,7 +606,6 @@ impl AmmSwapClient {
 
     pub fn swap_v2_instr(
         &self,
-        // config: &CommonConfig,
         amm_config: solana_pubkey::Pubkey,
         pool_account_key: solana_pubkey::Pubkey,
         input_vault: solana_pubkey::Pubkey,
@@ -619,38 +621,58 @@ impl AmmSwapClient {
         sqrt_price_limit_x64: Option<u128>,
         is_base_input: bool,
     ) -> anyhow::Result<Vec<Instruction>> {
-        // let wallet = solana_sdk::signature::read_keypair_file(self.owner)
-        //     .map_err(|_| format_err!("failed to read keypair from {}", config.wallet()))?;
-        // let cluster = config.cluster();
-        // Client.
-        let client = anchor_client::Client::new(Cluster::Mainnet, Rc::new(self.owner));
-        let program = client.program(solana_pubkey::Pubkey::from_str_const(CLMM))?;
+        // Build Anchor-style instruction data for SwapV2:
+        // discriminator + borsh-encoded fields.
+        let mut data = Vec::with_capacity(8 + 8 + 8 + 16 + 1);
+        data.extend_from_slice(&instruction::SwapV2::DISCRIMINATOR);
+        data.extend_from_slice(&amount.to_le_bytes());
+        data.extend_from_slice(&other_amount_threshold.to_le_bytes());
+        data.extend_from_slice(&sqrt_price_limit_x64.unwrap_or(0u128).to_le_bytes());
+        data.push(is_base_input as u8);
 
-        let instructions = program
-            .request()
-            .accounts(SwapSingleV2 {
-                payer: program.payer(),
-                amm_config,
-                pool_state: pool_account_key,
-                input_token_account: user_input_token,
-                output_token_account: user_output_token,
-                input_vault,
-                output_vault,
-                observation_state,
-                token_program: solana_pubkey::Pubkey::from(spl_token::id().to_bytes()),
-                token_program_2022: spl_token_2022::id(),
-                memo_program: MEMO_ID,
-                input_vault_mint,
-                output_vault_mint,
-            })
-            .accounts(remaining_accounts)
-            .args(SwapV2 {
-                amount,
-                other_amount_threshold,
-                sqrt_price_limit_x64: sqrt_price_limit_x64.unwrap_or(0u128),
-                is_base_input,
-            })
-            .instructions()?;
-        Ok(instructions)
+        // Convert clmm Pubkey type into the Pubkey used by `AccountMeta`.
+        fn to_sdk_pubkey(pk: solana_pubkey::Pubkey) -> Pubkey {
+            Pubkey::from(pk.to_bytes())
+        }
+
+        let mut accounts: Vec<AccountMeta> = Vec::with_capacity(13 + remaining_accounts.len());
+
+        // Core SwapSingleV2 accounts in the correct order.
+        accounts.push(AccountMeta::new(self.owner.pubkey(), true)); // payer
+        accounts.push(AccountMeta::new_readonly(to_sdk_pubkey(amm_config), false));
+        accounts.push(AccountMeta::new(to_sdk_pubkey(pool_account_key), false));
+        accounts.push(AccountMeta::new(to_sdk_pubkey(user_input_token), false));
+        accounts.push(AccountMeta::new(to_sdk_pubkey(user_output_token), false));
+        accounts.push(AccountMeta::new(to_sdk_pubkey(input_vault), false));
+        accounts.push(AccountMeta::new(to_sdk_pubkey(output_vault), false));
+        accounts.push(AccountMeta::new(to_sdk_pubkey(observation_state), false));
+        accounts.push(AccountMeta::new_readonly(spl_token::id(), false));
+        accounts.push(AccountMeta::new_readonly(
+            Address::from(spl_token_2022::id().to_bytes()),
+            false,
+        ));
+        accounts.push(AccountMeta::new_readonly(
+            Address::from(spl_memo::id().to_bytes()),
+            false,
+        ));
+        accounts.push(AccountMeta::new_readonly(
+            to_sdk_pubkey(input_vault_mint),
+            false,
+        ));
+        accounts.push(AccountMeta::new_readonly(
+            to_sdk_pubkey(output_vault_mint),
+            false,
+        ));
+
+        // Tick array bitmap extension and tick-array accounts.
+        accounts.extend(remaining_accounts);
+
+        let program_id = Pubkey::from_str_const(CLMM);
+
+        Ok(vec![Instruction {
+            program_id,
+            accounts,
+            data,
+        }])
     }
 }
