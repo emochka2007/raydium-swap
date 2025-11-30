@@ -18,7 +18,8 @@ use tracing::info;
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().unwrap();
-    let amount_in = 500;
+    // 5 monad
+    let amount_in = 5_0000_0000;
     let slippage = 0.01;
     let url = env::var("RPC_URL").unwrap();
     let mint_a = env::var("MINT_1").unwrap();
