@@ -1,7 +1,7 @@
 use anyhow::anyhow;
+use raydium_amm_swap::client::AmmSwapClient;
 use raydium_amm_swap::helpers::from_bytes_to_key_pair;
 use raydium_amm_swap::interface::{PoolInfosByType, PoolType, SinglePoolInfoByType};
-use raydium_amm_swap::raydium::AmmSwapClient;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
 use std::env;

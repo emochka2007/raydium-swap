@@ -70,6 +70,5 @@ pub mod consts;
 pub mod helpers;
 pub mod interface;
 pub mod libraries;
-pub mod raydium;
 pub mod states;
 pub mod util;

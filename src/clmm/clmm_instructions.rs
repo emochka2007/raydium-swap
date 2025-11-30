@@ -561,58 +561,6 @@ const MPL_PREFIX: &str = "metadata";
 //     Ok(instructions)
 // }
 
-// pub fn swap_v2_instr(
-//     config: &CommonConfig,
-//     amm_config: Pubkey,
-//     pool_account_key: Pubkey,
-//     input_vault: Pubkey,
-//     output_vault: Pubkey,
-//     observation_state: Pubkey,
-//     user_input_token: Pubkey,
-//     user_output_token: Pubkey,
-//     input_vault_mint: Pubkey,
-//     output_vault_mint: Pubkey,
-//     remaining_accounts: Vec<AccountMeta>,
-//     amount: u64,
-//     other_amount_threshold: u64,
-//     sqrt_price_limit_x64: Option<u128>,
-//     is_base_input: bool,
-// ) -> Result<Vec<Instruction>> {
-//     let wallet = solana_sdk::signature::read_keypair_file(config.wallet())
-//         .map_err(|_| format_err!("failed to read keypair from {}", config.wallet()))?;
-//     let cluster = config.cluster();
-//     // Client.
-//     let client = Client::new(cluster, Rc::new(wallet));
-//     let program = client.program(config.clmm_program())?;
-//
-//     let instructions = program
-//         .request()
-//         .accounts(raydium_clmm_accounts::SwapSingleV2 {
-//             payer: program.payer(),
-//             amm_config,
-//             pool_state: pool_account_key,
-//             input_token_account: user_input_token,
-//             output_token_account: user_output_token,
-//             input_vault,
-//             output_vault,
-//             observation_state,
-//             token_program: spl_token::id(),
-//             token_program_2022: spl_token_2022::id(),
-//             memo_program: MEMO_ID,
-//             input_vault_mint,
-//             output_vault_mint,
-//         })
-//         .accounts(remaining_accounts)
-//         .args(raydium_clmm_instruction::SwapV2 {
-//             amount,
-//             other_amount_threshold,
-//             sqrt_price_limit_x64: sqrt_price_limit_x64.unwrap_or(0u128),
-//             is_base_input,
-//         })
-//         .instructions()?;
-//     Ok(instructions)
-// }
-
 // pub fn initialize_reward_instr(
 //     config: &CommonConfig,
 //     pool_account_key: Pubkey,

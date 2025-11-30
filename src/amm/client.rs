@@ -1,12 +1,16 @@
 use crate::amm::{AmmInstruction, SwapInstructionBaseIn};
 use crate::clmm::{clmm_instructions, clmm_utils};
+use crate::common::create_ata_token_or_not;
 use crate::consts::{AMM_V4, CLMM, LIQUIDITY_FEES_DENOMINATOR, LIQUIDITY_FEES_NUMERATOR};
 use crate::interface::{
     ClmmPoolInfosResponse, ClmmSinglePoolInfo, ClmmSwapParams, Pool, PoolInfosByType,
     PoolInfosResponse, PoolKeys, PoolType, SinglePoolInfo, SinglePoolInfoByType, SinglePoolKey,
 };
-use anyhow::{Context, anyhow};
+use anchor_client::Cluster;
+use anyhow::{Context, anyhow, format_err};
 use borsh::{BorshDeserialize, BorshSerialize};
+use raydium_amm_v3::accounts::SwapSingleV2;
+use raydium_amm_v3::instruction::SwapV2;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use solana_address::Address;
@@ -19,6 +23,7 @@ use solana_sdk::signature::{Keypair, Signature};
 use solana_sdk::signer::Signer;
 use solana_sdk::transaction::Transaction;
 use solana_system_interface::instruction::transfer;
+use std::rc::Rc;
 use tracing::log::info;
 use tracing::{debug, warn};
 
@@ -489,10 +494,15 @@ impl AmmSwapClient {
             accounts,
             data,
         };
+
+        self.send_and_sign_transaction(&[ix]).await
+    }
+
+    async fn send_and_sign_transaction(&self, ix: &[Instruction]) -> anyhow::Result<Signature> {
         let recent_blockhash = &self.rpc_client.get_latest_blockhash().await?;
 
         let tx = Transaction::new_signed_with_payer(
-            &[ix],
+            ix,
             Some(&self.owner.pubkey()),
             &[&self.owner],
             *recent_blockhash,
@@ -503,73 +513,144 @@ impl AmmSwapClient {
         Ok(*sig)
     }
 
-    // pub async fn swap_clmm(&self, params: ClmmSwapParams) {
-    //     let base_in = !params.base_out;
-    //     let tickarray_bitmap_extension = Pubkey::find_program_address(
-    //         &[
-    //             raydium_amm_v3::states::POOL_TICK_ARRAY_BITMAP_SEED.as_bytes(),
-    //             params.pool_id.to_bytes().as_ref(),
-    //         ],
-    //         &Pubkey::from_str_const(CLMM),
-    //     )
-    //     .0;
-    //     let result = clmm_utils::calculate_swap_change(
-    //         &self.rpc_client,
-    //         config.clmm_program(),
-    //         pool_id,
-    //         tickarray_bitmap_extension,
-    //         user_input_token,
-    //         amount_specified,
-    //         limit_price,
-    //         base_in,
-    //         config.slippage(),
-    //     )?;
-    //
-    //     let mut instructions = Vec::new();
-    //     let user_output_token = if let Some(user_output_token) = user_output_token {
-    //         user_output_token
-    //     } else {
-    //         let create_user_output_token_instr = token::create_ata_token_or_not(
-    //             &payer_pubkey,
-    //             &result.output_vault_mint,
-    //             &payer_pubkey,
-    //             Some(&result.output_token_program),
-    //         );
-    //         instructions.extend(create_user_output_token_instr);
-    //
-    //         spl_associated_token_account::get_associated_token_address_with_program_id(
-    //             &payer_pubkey,
-    //             &result.output_vault_mint,
-    //             &result.output_token_program,
-    //         )
-    //     };
-    //
-    //     let mut remaining_accounts = Vec::new();
-    //     remaining_accounts.push(AccountMeta::new_readonly(tickarray_bitmap_extension, false));
-    //     let mut accounts = result
-    //         .remaining_tick_array_keys
-    //         .into_iter()
-    //         .map(|tick_array_address| AccountMeta::new(tick_array_address, false))
-    //         .collect();
-    //     remaining_accounts.append(&mut accounts);
-    //     let swap_instr = clmm_instructions::swap_v2_instr(
-    //         &config,
-    //         result.pool_amm_config,
-    //         result.pool_id,
-    //         result.input_vault,
-    //         result.output_vault,
-    //         result.pool_observation,
-    //         result.user_input_token,
-    //         user_output_token,
-    //         result.input_vault_mint,
-    //         result.output_vault_mint,
-    //         remaining_accounts,
-    //         result.amount,
-    //         result.other_amount_threshold,
-    //         result.sqrt_price_limit_x64,
-    //         result.is_base_input,
-    //     )?;
-    //     instructions.extend(swap_instr);
-    //     return Ok(Some(instructions));
-    // }
+    pub async fn swap_clmm(&self, params: ClmmSwapParams) -> anyhow::Result<Signature> {
+        let base_in = !params.base_out;
+        let tickarray_bitmap_extension = Pubkey::find_program_address(
+            &[
+                raydium_amm_v3::states::POOL_TICK_ARRAY_BITMAP_SEED.as_bytes(),
+                params.pool_id.to_bytes().as_ref(),
+            ],
+            &Pubkey::from_str_const(CLMM),
+        )
+        .0;
+
+        let tickarray_bitmap_extension =
+            solana_pubkey::Pubkey::from(tickarray_bitmap_extension.to_bytes());
+
+        let clmm_pubkey = solana_pubkey::Pubkey::from_str_const(CLMM);
+
+        let user_output_token = params.user_output_token.clone();
+
+        let result = clmm_utils::calculate_swap_change(
+            &self.rpc_client,
+            clmm_pubkey,
+            params.pool_id,
+            tickarray_bitmap_extension,
+            params.user_input_token,
+            params.amount_specified,
+            params.limit_price,
+            base_in,
+            params.slippage_bps,
+        )
+        .await?;
+
+        let mut instructions = Vec::new();
+        let user_output_token = if let Some(user_output_token) = user_output_token {
+            Pubkey::from(user_output_token.to_bytes())
+        } else {
+            let pubkey_output_vault_mint = &Pubkey::from(result.output_vault_mint.to_bytes());
+            let pubkey_output_token_program = &Pubkey::from(result.output_token_program.to_bytes());
+
+            let create_user_output_token_instr = create_ata_token_or_not(
+                &self.owner.pubkey(),
+                pubkey_output_vault_mint,
+                &self.owner.pubkey(),
+                Some(pubkey_output_token_program),
+            );
+            instructions.extend(create_user_output_token_instr);
+
+            spl_associated_token_account::get_associated_token_address_with_program_id(
+                &self.owner.pubkey(),
+                pubkey_output_vault_mint,
+                pubkey_output_token_program,
+            )
+        };
+
+        let mut remaining_accounts = Vec::new();
+        remaining_accounts.push(AccountMeta::new_readonly(
+            Address::from(tickarray_bitmap_extension.to_bytes()),
+            false,
+        ));
+        let mut accounts = result
+            .remaining_tick_array_keys
+            .into_iter()
+            .map(|tick_array_address| {
+                AccountMeta::new(Address::from(tick_array_address.to_bytes()), false)
+            })
+            .collect();
+        remaining_accounts.append(&mut accounts);
+        let user_output_token = solana_pubkey::Pubkey::from(user_output_token.to_bytes());
+        let swap_instr = self.swap_v2_instr(
+            result.pool_amm_config,
+            result.pool_id,
+            result.input_vault,
+            result.output_vault,
+            result.pool_observation,
+            result.user_input_token,
+            user_output_token,
+            result.input_vault_mint,
+            result.output_vault_mint,
+            remaining_accounts,
+            result.amount,
+            result.other_amount_threshold,
+            result.sqrt_price_limit_x64,
+            result.is_base_input,
+        )?;
+        instructions.extend(swap_instr);
+
+        self.send_and_sign_transaction(&instructions).await
+    }
+
+    pub fn swap_v2_instr(
+        &self,
+        // config: &CommonConfig,
+        amm_config: solana_pubkey::Pubkey,
+        pool_account_key: solana_pubkey::Pubkey,
+        input_vault: solana_pubkey::Pubkey,
+        output_vault: solana_pubkey::Pubkey,
+        observation_state: solana_pubkey::Pubkey,
+        user_input_token: solana_pubkey::Pubkey,
+        user_output_token: solana_pubkey::Pubkey,
+        input_vault_mint: solana_pubkey::Pubkey,
+        output_vault_mint: solana_pubkey::Pubkey,
+        remaining_accounts: Vec<AccountMeta>,
+        amount: u64,
+        other_amount_threshold: u64,
+        sqrt_price_limit_x64: Option<u128>,
+        is_base_input: bool,
+    ) -> anyhow::Result<Vec<Instruction>> {
+        // let wallet = solana_sdk::signature::read_keypair_file(self.owner)
+        //     .map_err(|_| format_err!("failed to read keypair from {}", config.wallet()))?;
+        // let cluster = config.cluster();
+        // Client.
+        let client = anchor_client::Client::new(Cluster::Mainnet, Rc::new(self.owner));
+        let program = client.program(solana_pubkey::Pubkey::from_str_const(CLMM))?;
+
+        let instructions = program
+            .request()
+            .accounts(SwapSingleV2 {
+                payer: program.payer(),
+                amm_config,
+                pool_state: pool_account_key,
+                input_token_account: user_input_token,
+                output_token_account: user_output_token,
+                input_vault,
+                output_vault,
+                observation_state,
+                token_program: solana_pubkey::Pubkey::from(spl_token::id().to_bytes()),
+                token_program_2022: spl_token_2022::id(),
+                memo_program: MEMO_ID,
+                input_vault_mint,
+                output_vault_mint,
+            })
+            .accounts(remaining_accounts)
+            .args(SwapV2 {
+                amount,
+                other_amount_threshold,
+                sqrt_price_limit_x64: sqrt_price_limit_x64.unwrap_or(0u128),
+                is_base_input,
+            })
+            .instructions()?;
+        Ok(instructions)
+    }
 }

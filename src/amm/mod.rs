@@ -2,6 +2,8 @@
 
 #![allow(clippy::too_many_arguments)]
 
+pub mod client;
+
 use anchor_lang::solana_program;
 use anchor_spl::associated_token::spl_associated_token_account;
 use anchor_spl::token::spl_token;

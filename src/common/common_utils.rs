@@ -74,21 +74,22 @@ pub fn deserialize_account<T: Copy>(account: &CliAccount, is_anchor_account: boo
     Ok(unsafe { *(&account_data[0] as *const u8 as *const T) })
 }
 
-pub fn get_pool_mints_inverse_fee(
-    rpc_client: &RpcClient,
+pub async fn get_pool_mints_inverse_fee(
+    rpc_client: &solana_client::nonblocking::rpc_client::RpcClient,
     token_mint_0: Pubkey,
     token_mint_1: Pubkey,
     post_fee_amount_0: u64,
     post_fee_amount_1: u64,
-) -> (TransferFeeInfo, TransferFeeInfo) {
+) -> Result<(TransferFeeInfo, TransferFeeInfo)> {
     let load_accounts = vec![token_mint_0, token_mint_1];
-    let rsps = rpc_client.get_multiple_accounts(&load_accounts).unwrap();
-    let epoch = rpc_client.get_epoch_info().unwrap().epoch;
+    let rsps = rpc_client.get_multiple_accounts(&load_accounts).await?;
+    let epoch = rpc_client.get_epoch_info().await?.epoch;
+    // todo fix
     let mint0_account = rsps[0].clone().ok_or("load mint0 rps error!").unwrap();
     let mint1_account = rsps[1].clone().ok_or("load mint0 rps error!").unwrap();
-    let mint0_state = unpack_mint(&mint0_account.data).unwrap();
-    let mint1_state = unpack_mint(&mint1_account.data).unwrap();
-    (
+    let mint0_state = unpack_mint(&mint0_account.data)?;
+    let mint1_state = unpack_mint(&mint1_account.data)?;
+    Ok((
         TransferFeeInfo {
             mint: token_mint_0,
             owner: mint0_account.owner,
@@ -99,7 +100,7 @@ pub fn get_pool_mints_inverse_fee(
             owner: mint1_account.owner,
             transfer_fee: get_transfer_inverse_fee(&mint1_state, post_fee_amount_1, epoch),
         },
-    )
+    ))
 }
 
 pub fn get_pool_mints_transfer_fee(

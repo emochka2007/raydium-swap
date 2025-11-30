@@ -1,6 +1,7 @@
 //! Types for deserializing JSON responses from the Raydium HTTP API.
 
 use serde::Deserialize;
+use solana_address::Address;
 use solana_sdk::pubkey::Pubkey;
 use std::fmt::Display;
 
@@ -314,16 +315,18 @@ pub struct ClmmPool {
 }
 
 pub struct ClmmSwapParams {
-    pub(crate) pool_id: Pubkey,
+    pub pool_id: solana_pubkey::Pubkey,
     /// The token of user want to swap from.
-    user_input_token: Pubkey,
+    pub user_input_token: solana_pubkey::Pubkey,
     /// The token of user want to swap to.
     /// If none is given, the account will be ATA account.
-    user_output_token: Option<Pubkey>,
+    pub user_output_token: Option<solana_pubkey::Pubkey>,
     /// The amount specified of user want to swap from or to token.
-    amount_specified: u64,
+    pub amount_specified: u64,
     /// The float price of the pool that can be swaped to.
-    limit_price: Option<f64>,
+    pub limit_price: Option<f64>,
     /// The amount specified is output_token or not.
-    pub(crate) base_out: bool,
+    pub base_out: bool,
+    /// Slippage for the swap in bps
+    pub slippage_bps: u64,
 }
