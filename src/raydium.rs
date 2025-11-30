@@ -9,6 +9,7 @@ use anyhow::{Context, anyhow};
 use borsh::{BorshDeserialize, BorshSerialize};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
+use solana_address::Address;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::instruction::AccountMeta;
@@ -430,7 +431,18 @@ impl AmmSwapClient {
     ) -> anyhow::Result<Signature> {
         let mint_a = Pubkey::try_from(mint_a)?;
         let mint_b = Pubkey::try_from(mint_b)?;
+        self.swap_amm(pool_keys, mint_a, mint_b, amount_in, amount_out)
+            .await
+    }
 
+    async fn swap_amm(
+        &self,
+        pool_keys: &SinglePoolKey,
+        mint_a: Address,
+        mint_b: Address,
+        amount_in: u64,
+        amount_out: u64, // out.amount_out means amount 'without' slippage
+    ) -> anyhow::Result<Signature> {
         let amm_program = Pubkey::from_str_const(AMM_V4);
 
         let user_token_source = self.get_or_create_token_program(mint_a).await?;

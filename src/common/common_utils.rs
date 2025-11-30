@@ -6,7 +6,7 @@ use solana_account_decoder::{
     parse_token::{TokenAccountType, UiAccountState},
 };
 use solana_client::{rpc_client::RpcClient, rpc_request::TokenAccountsFilter};
-use solana_program::program_pack::Pack;
+use solana_program_pack::Pack;
 use solana_sdk::{account::Account as CliAccount, pubkey::Pubkey, signer::keypair::Keypair};
 use spl_token_2022::{
     extension::{
@@ -152,7 +152,7 @@ pub fn get_transfer_inverse_fee<S: BaseState + Pack>(
 }
 
 /// Calculate the fee for input amount
-pub fn get_transfer_fee<S: BaseState + BaseState + Pack>(
+pub fn get_transfer_fee<S: BaseState + Pack>(
     account_state: &StateWithExtensions<S>,
     epoch: u64,
     pre_fee_amount: u64,

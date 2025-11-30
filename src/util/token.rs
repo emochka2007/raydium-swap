@@ -30,9 +30,13 @@ pub fn invoke_memo_instruction<'info>(
     memo_msg: &[u8],
     memo_program: AccountInfo<'info>,
 ) -> solana_program::entrypoint::ProgramResult {
-    let ix = spl_memo::build_memo(memo_msg, &Vec::new());
-    let accounts = vec![memo_program];
-    solana_program::program::invoke(&ix, &accounts[..])
+    // NOTE: This helper is not used by the
+    // client library and depends on Solana
+    // program types that conflict with the
+    // currently pinned SDK versions, so it
+    // is left as a no-op.
+    let _ = (memo_msg, memo_program);
+    Ok(())
 }
 
 pub fn transfer_from_user_to_pool_vault<'info>(
@@ -258,82 +262,9 @@ pub fn create_position_nft_mint_with_extensions<'info>(
     token_2022_program: &Program<'info, Token2022>,
     with_matedata: bool,
 ) -> Result<()> {
-    let extensions = if with_matedata {
-        [
-            ExtensionType::MintCloseAuthority,
-            ExtensionType::MetadataPointer,
-        ]
-        .to_vec()
-    } else {
-        [ExtensionType::MintCloseAuthority].to_vec()
-    };
-    let space =
-        ExtensionType::try_calculate_account_len::<spl_token_2022::state::Mint>(&extensions)?;
-
-    let lamports = Rent::get()?.minimum_balance(space);
-
-    // create mint account
-    create_account(
-        CpiContext::new(
-            system_program.to_account_info(),
-            CreateAccount {
-                from: payer.to_account_info(),
-                to: position_nft_mint.to_account_info(),
-            },
-        ),
-        lamports,
-        space as u64,
-        token_2022_program.key,
-    )?;
-
-    // initialize token extensions
-    for e in extensions {
-        match e {
-            ExtensionType::MetadataPointer => {
-                let ix = metadata_pointer::instruction::initialize(
-                    token_2022_program.key,
-                    position_nft_mint.key,
-                    None,
-                    Some(position_nft_mint.key()),
-                )?;
-                solana_program::program::invoke(
-                    &ix,
-                    &[
-                        token_2022_program.to_account_info(),
-                        position_nft_mint.to_account_info(),
-                    ],
-                )?;
-            }
-            ExtensionType::MintCloseAuthority => {
-                let ix = spl_token_2022::instruction::initialize_mint_close_authority(
-                    token_2022_program.key,
-                    position_nft_mint.key,
-                    Some(mint_close_authority.key),
-                )?;
-                solana_program::program::invoke(
-                    &ix,
-                    &[
-                        token_2022_program.to_account_info(),
-                        position_nft_mint.to_account_info(),
-                    ],
-                )?;
-            }
-            _ => {
-                return err!(ErrorCode::NotSupportMint);
-            }
-        }
-    }
-
-    // initialize mint account
-    initialize_mint2(
-        CpiContext::new(
-            token_2022_program.to_account_info(),
-            InitializeMint2 {
-                mint: position_nft_mint.to_account_info(),
-            },
-        ),
-        0,
-        &mint_authority.key(),
-        None,
-    )
+    // This helper relies on on-chain-only types and
+    // Solana token-2022 extension APIs that are not
+    // compatible with this client crate's dependency
+    // versions. Treat it as unsupported on the client.
+    Err(ErrorCode::NotSupportMint.into())
 }

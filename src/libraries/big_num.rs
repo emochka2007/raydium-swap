@@ -18,7 +18,7 @@ construct_uint! {
 macro_rules! construct_bignum {
     ( $(#[$attr:meta])* $visibility:vis struct $name:ident ( $n_words:tt ); ) => {
         $crate::construct_bignum! { @construct $(#[$attr])* $visibility struct $name ($n_words); }
-        impl $crate::core_::convert::From<u128> for $name {
+        impl core::convert::From<u128> for $name {
             fn from(value: u128) -> $name {
                 let mut ret = [0; $n_words];
                 ret[0] = value as u64;
@@ -27,7 +27,7 @@ macro_rules! construct_bignum {
             }
         }
 
-        impl $crate::core_::convert::From<i128> for $name {
+        impl core::convert::From<i128> for $name {
             fn from(value: i128) -> $name {
                 match value >= 0 {
                     true => From::from(value as u128),
@@ -62,11 +62,11 @@ macro_rules! construct_bignum {
             }
         }
 
-        impl $crate::core_::convert::TryFrom<$name> for u128 {
+        impl core::convert::TryFrom<$name> for u128 {
             type Error = &'static str;
 
             #[inline]
-            fn try_from(u: $name) -> $crate::core_::result::Result<u128, &'static str> {
+            fn try_from(u: $name) -> core::result::Result<u128, &'static str> {
                 let $name(arr) = u;
                 for i in 2..$n_words {
                     if arr[i] != 0 {
@@ -77,11 +77,11 @@ macro_rules! construct_bignum {
             }
         }
 
-        impl $crate::core_::convert::TryFrom<$name> for i128 {
+        impl core::convert::TryFrom<$name> for i128 {
             type Error = &'static str;
 
             #[inline]
-            fn try_from(u: $name) -> $crate::core_::result::Result<i128, &'static str> {
+            fn try_from(u: $name) -> core::result::Result<i128, &'static str> {
                 let err_str = "integer overflow when casting to i128";
                 let i = u128::try_from(u).map_err(|_| err_str)?;
                 if i > i128::max_value() as u128 {
@@ -211,13 +211,13 @@ macro_rules! construct_bignum {
 			}
         }
 
-        impl $crate::core_::default::Default for $name {
+        impl core::default::Default for $name {
             fn default() -> Self {
                 $name::zero()
             }
         }
 
-        impl $crate::core_::ops::BitAnd<$name> for $name {
+        impl core::ops::BitAnd<$name> for $name {
             type Output = $name;
 
             #[inline]
@@ -232,7 +232,7 @@ macro_rules! construct_bignum {
             }
         }
 
-        impl $crate::core_::ops::BitOr<$name> for $name {
+        impl core::ops::BitOr<$name> for $name {
             type Output = $name;
 
             #[inline]
@@ -247,7 +247,7 @@ macro_rules! construct_bignum {
             }
         }
 
-        impl $crate::core_::ops::BitXor<$name> for $name {
+        impl core::ops::BitXor<$name> for $name {
             type Output = $name;
 
             #[inline]
@@ -262,7 +262,7 @@ macro_rules! construct_bignum {
             }
         }
 
-        impl $crate::core_::ops::Not for $name {
+        impl core::ops::Not for $name {
             type Output = $name;
 
             #[inline]
@@ -276,7 +276,7 @@ macro_rules! construct_bignum {
             }
         }
 
-        impl $crate::core_::ops::Shl<usize> for $name {
+        impl core::ops::Shl<usize> for $name {
             type Output = $name;
 
             fn shl(self, shift: usize) -> $name {
@@ -299,14 +299,14 @@ macro_rules! construct_bignum {
             }
         }
 
-        impl<'a> $crate::core_::ops::Shl<usize> for &'a $name {
+        impl<'a> core::ops::Shl<usize> for &'a $name {
             type Output = $name;
             fn shl(self, shift: usize) -> $name {
                 *self << shift
             }
         }
 
-        impl $crate::core_::ops::Shr<usize> for $name {
+        impl core::ops::Shr<usize> for $name {
             type Output = $name;
 
             fn shr(self, shift: usize) -> $name {
@@ -331,7 +331,7 @@ macro_rules! construct_bignum {
             }
         }
 
-        impl<'a> $crate::core_::ops::Shr<usize> for &'a $name {
+        impl<'a> core::ops::Shr<usize> for &'a $name {
             type Output = $name;
             fn shr(self, shift: usize) -> $name {
                 *self >> shift

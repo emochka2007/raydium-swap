@@ -420,14 +420,14 @@ impl PoolState {
         Ok(tick_array_offset_in_bitmap as usize)
     }
 
-    // fn flip_tick_array_bit_internal(&mut self, tick_array_start_index: i32) -> Result<()> {
-    //     let tick_array_offset_in_bitmap = self.get_tick_array_offset(tick_array_start_index)?;
-    //
-    //     let tick_array_bitmap = U1024(self.tick_array_bitmap);
-    //     let mask = U1024::one() << tick_array_offset_in_bitmap.try_into().unwrap();
-    //     self.tick_array_bitmap = tick_array_bitmap.bitxor(mask).0;
-    //     Ok(())
-    // }
+    fn flip_tick_array_bit_internal(&mut self, tick_array_start_index: i32) -> Result<()> {
+        let tick_array_offset_in_bitmap = self.get_tick_array_offset(tick_array_start_index)?;
+
+        let tick_array_bitmap = U1024(self.tick_array_bitmap);
+        let mask = U1024::one() << tick_array_offset_in_bitmap.try_into().unwrap();
+        self.tick_array_bitmap = tick_array_bitmap.bitxor(mask).0;
+        Ok(())
+    }
 
     pub fn flip_tick_array_bit<'c: 'info, 'info>(
         &mut self,
@@ -586,8 +586,8 @@ impl PoolState {
     }
 }
 
-#[derive(Copy, Clone, AnchorSerialize, AnchorDeserialize, Debug, PartialEq)]
 /// State of reward
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum RewardState {
     /// Reward not initialized
     Uninitialized,
@@ -660,11 +660,9 @@ impl RewardInfo {
 #[cfg_attr(feature = "client", derive(Debug))]
 pub struct PoolCreatedEvent {
     /// The first token of the pool by address sort order
-    #[index]
     pub token_mint_0: Pubkey,
 
     /// The second token of the pool by address sort order
-    #[index]
     pub token_mint_1: Pubkey,
 
     /// The minimum number of ticks between initialized ticks
@@ -690,7 +688,6 @@ pub struct PoolCreatedEvent {
 #[cfg_attr(feature = "client", derive(Debug))]
 pub struct CollectProtocolFeeEvent {
     /// The pool whose protocol fee is collected
-    #[index]
     pub pool_state: Pubkey,
 
     /// The address that receives the collected token_0 protocol fees
@@ -711,21 +708,17 @@ pub struct CollectProtocolFeeEvent {
 #[cfg_attr(feature = "client", derive(Debug))]
 pub struct SwapEvent {
     /// The pool for which token_0 and token_1 were swapped
-    #[index]
     pub pool_state: Pubkey,
 
     /// The address that initiated the swap call, and that received the callback
-    #[index]
     pub sender: Pubkey,
 
     /// The payer token account in zero for one swaps, or the recipient token account
     /// in one for zero swaps
-    #[index]
     pub token_account_0: Pubkey,
 
     /// The payer token account in one for zero swaps, or the recipient token account
     /// in zero for one swaps
-    #[index]
     pub token_account_1: Pubkey,
 
     /// The real delta amount of the token_0 of the pool or user
@@ -758,7 +751,6 @@ pub struct SwapEvent {
 #[cfg_attr(feature = "client", derive(Debug))]
 pub struct LiquidityChangeEvent {
     /// The pool for swap
-    #[index]
     pub pool_state: Pubkey,
 
     /// The tick of the pool

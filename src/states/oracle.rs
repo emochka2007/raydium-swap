@@ -10,7 +10,7 @@ pub const OBSERVATION_NUM: usize = 100;
 pub const OBSERVATION_UPDATE_DURATION_DEFAULT: u32 = 15;
 
 /// The element of observations in ObservationState
-#[zero_copy(unsafe)]
+#[account(zero_copy(unsafe))]
 #[repr(C, packed)]
 #[derive(Default, Debug)]
 pub struct Observation {
@@ -26,7 +26,7 @@ impl Observation {
     pub const LEN: usize = 4 + 8 + 8 * 4;
 }
 
-#[account(zero_copy(unsafe))]
+#[zero_copy(unsafe)]
 #[repr(C, packed)]
 #[derive(Debug)]
 pub struct ObservationState {

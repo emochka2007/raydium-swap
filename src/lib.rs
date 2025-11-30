@@ -58,6 +58,11 @@
 //!
 //! }
 //! ```
+use anchor_lang::prelude::declare_id;
+
+// Raydium CLMM program id, used by Anchor
+// account/loader traits for on-chain types.
+declare_id!("CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK");
 pub mod amm;
 pub mod clmm;
 pub mod common;

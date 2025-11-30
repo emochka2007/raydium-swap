@@ -1,3 +1,4 @@
+use crate::consts::CLMM;
 use crate::libraries::error::ErrorCode;
 use crate::libraries::{
     big_num::U512,
@@ -47,7 +48,7 @@ impl TickArrayBitmapExtension {
     pub fn key(pool_id: Pubkey) -> Pubkey {
         Pubkey::find_program_address(
             &[POOL_TICK_ARRAY_BITMAP_SEED.as_bytes(), pool_id.as_ref()],
-            &crate::id(),
+            &Pubkey::from_str_const(CLMM),
         )
         .0
     }
@@ -117,7 +118,7 @@ impl TickArrayBitmapExtension {
         let tick_array_bitmap = U512(tick_array_bitmap);
         let mask = U512::one() << tick_array_offset_in_bitmap;
         if tick_array_start_index < 0 {
-            self.negative_tick_array_bitmap[offset as usize] = tick_array_bitmap.bitxor(mask).0;
+            self.negative_tick_array_bitmap[offset] = tick_array_bitmap.bitxor(mask).0;
         } else {
             self.positive_tick_array_bitmap[offset as usize] = tick_array_bitmap.bitxor(mask).0;
         }
