@@ -1,4 +1,3 @@
-use super::get_recent_epoch;
 use crate::states::*;
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token};
@@ -13,6 +12,7 @@ use anchor_spl::token_2022::{
     },
 };
 use anchor_spl::token_interface::Mint;
+use raydium_amm_v3::util::get_recent_epoch;
 use std::collections::HashSet;
 
 const MINT_WHITELIST: [&str; 4] = [

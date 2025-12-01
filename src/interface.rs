@@ -77,7 +77,7 @@ pub struct PoolPeriod {
     /// Maximum price observed.
     pub price_max: f64,
     /// Reward APRs (per reward mint).
-    pub reward_apr: Vec<u32>,
+    pub reward_apr: Vec<f64>,
 }
 
 /// Info about a default reward stream.

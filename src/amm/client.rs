@@ -167,6 +167,16 @@ impl AmmSwapClient {
             .context("Raydium amm get failed")?
             .error_for_status()
             .context("Raydium non-200")?;
+        println!("Response {:?}", response.text().await.unwrap());
+        let response = self
+            .reqwest_client
+            .get(&url)
+            .query(query.unwrap_or(&[]))
+            .send()
+            .await
+            .context("Raydium amm get failed")?
+            .error_for_status()
+            .context("Raydium non-200")?;
 
         Ok(response.json::<T>().await?)
     }
