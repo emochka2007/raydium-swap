@@ -26,19 +26,19 @@ pub fn get_bitmap_tick_boundary(tick_array_start_index: i32, tick_spacing: u16) 
     }
 }
 
-pub fn most_significant_bit(x: U1024) -> Option<u16> {
+pub fn most_significant_bit(x: U1024) -> anyhow::Result<Option<u16>> {
     if x.is_zero() {
-        None
+        Ok(None)
     } else {
-        Some(u16::try_from(x.leading_zeros()).unwrap())
+        Ok(Some(u16::try_from(x.leading_zeros())?))
     }
 }
 
-pub fn least_significant_bit(x: U1024) -> Option<u16> {
+pub fn least_significant_bit(x: U1024) -> anyhow::Result<Option<u16>> {
     if x.is_zero() {
-        None
+        Ok(None)
     } else {
-        Some(u16::try_from(x.trailing_zeros()).unwrap())
+        Ok(Some(u16::try_from(x.trailing_zeros())?))
     }
 }
 
@@ -59,7 +59,7 @@ pub fn check_current_tick_array_is_initialized(
     }
     let bit_pos = compressed.abs();
     // set current bit
-    let mask = U1024::one() << bit_pos.try_into().unwrap();
+    let mask = U1024::one() << bit_pos.try_into()?;
     let masked = bit_map & mask;
     // check the current bit whether initialized
     let initialized = masked != U1024::default();
@@ -75,7 +75,7 @@ pub fn next_initialized_tick_array_start_index(
     last_tick_array_start_index: i32,
     tick_spacing: u16,
     zero_for_one: bool,
-) -> (bool, i32) {
+) -> anyhow::Result<(bool, i32)> {
     assert!(TickArrayState::check_is_valid_start_index(
         last_tick_array_start_index,
         tick_spacing
@@ -89,7 +89,7 @@ pub fn next_initialized_tick_array_start_index(
 
     if next_tick_array_start_index < -tick_boundary || next_tick_array_start_index >= tick_boundary
     {
-        return (false, last_tick_array_start_index);
+        return Ok((false, last_tick_array_start_index));
     }
 
     let multiplier = i32::from(tick_spacing) * TICK_ARRAY_SIZE;
@@ -103,31 +103,29 @@ pub fn next_initialized_tick_array_start_index(
     if zero_for_one {
         // tick from upper to lower
         // find from highter bits to lower bits
-        let offset_bit_map = bit_map << (1024 - bit_pos - 1).try_into().unwrap();
-        let next_bit = most_significant_bit(offset_bit_map);
-        if next_bit.is_some() {
-            let next_array_start_index =
-                (bit_pos - i32::from(next_bit.unwrap()) - 512) * multiplier;
-            (true, next_array_start_index)
+        let offset_bit_map = bit_map << (1024 - bit_pos - 1).try_into()?;
+        let next_bit = most_significant_bit(offset_bit_map)?;
+        if let Some(next_bit) = next_bit {
+            let next_array_start_index = (bit_pos - i32::from(next_bit) - 512) * multiplier;
+            Ok((true, next_array_start_index))
         } else {
             // not found til to the end
-            (false, -tick_boundary)
+            Ok((false, -tick_boundary))
         }
     } else {
         // tick from lower to upper
         // find from lower bits to highter bits
-        let offset_bit_map = bit_map >> (bit_pos).try_into().unwrap();
-        let next_bit = least_significant_bit(offset_bit_map);
-        if next_bit.is_some() {
-            let next_array_start_index =
-                (bit_pos + i32::from(next_bit.unwrap()) - 512) * multiplier;
-            (true, next_array_start_index)
+        let offset_bit_map = bit_map >> (bit_pos).try_into()?;
+        let next_bit = least_significant_bit(offset_bit_map)?;
+        if let Some(next_bit) = next_bit {
+            let next_array_start_index = (bit_pos + i32::from(next_bit) - 512) * multiplier;
+            Ok((true, next_array_start_index))
         } else {
             // not found til to the end
-            (
+            Ok((
                 false,
                 tick_boundary - TickArrayState::tick_count(tick_spacing),
-            )
+            ))
         }
     }
 }

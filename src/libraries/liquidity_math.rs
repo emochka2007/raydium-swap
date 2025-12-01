@@ -6,6 +6,7 @@ use super::full_math::MulDiv;
 use super::tick_math;
 use super::unsafe_math::UnsafeMathTrait;
 use anchor_lang::prelude::*;
+use anyhow::anyhow;
 
 /// Add a signed liquidity delta to liquidity and revert if it overflows or underflows
 ///
@@ -17,10 +18,10 @@ use anchor_lang::prelude::*;
 pub fn add_delta(x: u128, y: i128) -> Result<u128> {
     let z: u128;
     if y < 0 {
-        z = x - u128::try_from(-y).unwrap();
+        z = x - u128::try_from(-y)?;
         require_gt!(x, z, ErrorCode::LiquiditySubValueErr);
     } else {
-        z = x + u128::try_from(y).unwrap();
+        z = x + u128::try_from(y)?;
         require_gte!(z, x, ErrorCode::LiquidityAddValueErr);
     }
 
@@ -33,7 +34,7 @@ pub fn get_liquidity_from_amount_0(
     mut sqrt_ratio_a_x64: u128,
     mut sqrt_ratio_b_x64: u128,
     amount_0: u64,
-) -> u128 {
+) -> anyhow::Result<u128> {
     // sqrt_ratio_a_x64 should hold the smaller value
     if sqrt_ratio_a_x64 > sqrt_ratio_b_x64 {
         std::mem::swap(&mut sqrt_ratio_a_x64, &mut sqrt_ratio_b_x64);
@@ -43,15 +44,19 @@ pub fn get_liquidity_from_amount_0(
             U128::from(sqrt_ratio_b_x64),
             U128::from(fixed_point_64::Q64),
         )
-        .unwrap();
+        .ok_or(anyhow!(
+            "Error in mul_div_floor get_liquidity_from_amount_0"
+        ))?;
 
-    U128::from(amount_0)
+    Ok(U128::from(amount_0)
         .mul_div_floor(
             intermediate,
             U128::from(sqrt_ratio_b_x64 - sqrt_ratio_a_x64),
         )
-        .unwrap()
-        .as_u128()
+        .ok_or(anyhow!(
+            "Error in mul_div_floor get_liquidity_from_amount_0"
+        ))?
+        .as_u128())
 }
 
 /// Computes the amount of liquidity received for a given amount of token_1 and price range
@@ -60,19 +65,21 @@ pub fn get_liquidity_from_amount_1(
     mut sqrt_ratio_a_x64: u128,
     mut sqrt_ratio_b_x64: u128,
     amount_1: u64,
-) -> u128 {
+) -> anyhow::Result<u128> {
     // sqrt_ratio_a_x64 should hold the smaller value
     if sqrt_ratio_a_x64 > sqrt_ratio_b_x64 {
         std::mem::swap(&mut sqrt_ratio_a_x64, &mut sqrt_ratio_b_x64);
     };
 
-    U128::from(amount_1)
+    Ok(U128::from(amount_1)
         .mul_div_floor(
             U128::from(fixed_point_64::Q64),
             U128::from(sqrt_ratio_b_x64 - sqrt_ratio_a_x64),
         )
-        .unwrap()
-        .as_u128()
+        .ok_or(anyhow!(
+            "error in mul_div_floor in get_liquidity_from_amount_1"
+        ))?
+        .as_u128())
 }
 
 /// Computes the maximum amount of liquidity received for a given amount of token_0, token_1, the current
@@ -83,7 +90,7 @@ pub fn get_liquidity_from_amounts(
     mut sqrt_ratio_b_x64: u128,
     amount_0: u64,
     amount_1: u64,
-) -> u128 {
+) -> anyhow::Result<u128> {
     // sqrt_ratio_a_x64 should hold the smaller value
     if sqrt_ratio_a_x64 > sqrt_ratio_b_x64 {
         std::mem::swap(&mut sqrt_ratio_a_x64, &mut sqrt_ratio_b_x64);
@@ -91,14 +98,18 @@ pub fn get_liquidity_from_amounts(
 
     if sqrt_ratio_x64 <= sqrt_ratio_a_x64 {
         // If P ≤ P_lower, only token_0 liquidity is active
-        get_liquidity_from_amount_0(sqrt_ratio_a_x64, sqrt_ratio_b_x64, amount_0)
+        Ok(get_liquidity_from_amount_0(
+            sqrt_ratio_a_x64,
+            sqrt_ratio_b_x64,
+            amount_0,
+        )?)
     } else if sqrt_ratio_x64 < sqrt_ratio_b_x64 {
         // If P_lower < P < P_upper, active liquidity is the minimum of the liquidity provided
         // by token_0 and token_1
-        u128::min(
-            get_liquidity_from_amount_0(sqrt_ratio_x64, sqrt_ratio_b_x64, amount_0),
-            get_liquidity_from_amount_1(sqrt_ratio_a_x64, sqrt_ratio_x64, amount_1),
-        )
+        Ok(u128::min(
+            get_liquidity_from_amount_0(sqrt_ratio_x64, sqrt_ratio_b_x64, amount_0)?,
+            get_liquidity_from_amount_1(sqrt_ratio_a_x64, sqrt_ratio_x64, amount_1)?,
+        ))
     } else {
         // If P ≥ P_upper, only token_1 liquidity is active
         get_liquidity_from_amount_1(sqrt_ratio_a_x64, sqrt_ratio_b_x64, amount_1)
@@ -112,7 +123,7 @@ pub fn get_liquidity_from_single_amount_0(
     mut sqrt_ratio_a_x64: u128,
     mut sqrt_ratio_b_x64: u128,
     amount_0: u64,
-) -> u128 {
+) -> anyhow::Result<u128> {
     // sqrt_ratio_a_x64 should hold the smaller value
     if sqrt_ratio_a_x64 > sqrt_ratio_b_x64 {
         std::mem::swap(&mut sqrt_ratio_a_x64, &mut sqrt_ratio_b_x64);
@@ -120,14 +131,22 @@ pub fn get_liquidity_from_single_amount_0(
 
     if sqrt_ratio_x64 <= sqrt_ratio_a_x64 {
         // If P ≤ P_lower, only token_0 liquidity is active
-        get_liquidity_from_amount_0(sqrt_ratio_a_x64, sqrt_ratio_b_x64, amount_0)
+        Ok(get_liquidity_from_amount_0(
+            sqrt_ratio_a_x64,
+            sqrt_ratio_b_x64,
+            amount_0,
+        )?)
     } else if sqrt_ratio_x64 < sqrt_ratio_b_x64 {
         // If P_lower < P < P_upper, active liquidity is the minimum of the liquidity provided
         // by token_0 and token_1
-        get_liquidity_from_amount_0(sqrt_ratio_x64, sqrt_ratio_b_x64, amount_0)
+        Ok(get_liquidity_from_amount_0(
+            sqrt_ratio_x64,
+            sqrt_ratio_b_x64,
+            amount_0,
+        )?)
     } else {
         // If P ≥ P_upper, only token_1 liquidity is active
-        0
+        Ok(0)
     }
 }
 
@@ -138,7 +157,7 @@ pub fn get_liquidity_from_single_amount_1(
     mut sqrt_ratio_a_x64: u128,
     mut sqrt_ratio_b_x64: u128,
     amount_1: u64,
-) -> u128 {
+) -> anyhow::Result<u128> {
     // sqrt_ratio_a_x64 should hold the smaller value
     if sqrt_ratio_a_x64 > sqrt_ratio_b_x64 {
         std::mem::swap(&mut sqrt_ratio_a_x64, &mut sqrt_ratio_b_x64);
@@ -146,14 +165,22 @@ pub fn get_liquidity_from_single_amount_1(
 
     if sqrt_ratio_x64 <= sqrt_ratio_a_x64 {
         // If P ≤ P_lower, only token_0 liquidity is active
-        0
+        Ok(0)
     } else if sqrt_ratio_x64 < sqrt_ratio_b_x64 {
         // If P_lower < P < P_upper, active liquidity is the minimum of the liquidity provided
         // by token_0 and token_1
-        get_liquidity_from_amount_1(sqrt_ratio_a_x64, sqrt_ratio_x64, amount_1)
+        Ok(get_liquidity_from_amount_1(
+            sqrt_ratio_a_x64,
+            sqrt_ratio_x64,
+            amount_1,
+        )?)
     } else {
         // If P ≥ P_upper, only token_1 liquidity is active
-        get_liquidity_from_amount_1(sqrt_ratio_a_x64, sqrt_ratio_b_x64, amount_1)
+        Ok(get_liquidity_from_amount_1(
+            sqrt_ratio_a_x64,
+            sqrt_ratio_b_x64,
+            amount_1,
+        )?)
     }
 }
 
@@ -168,7 +195,7 @@ pub fn get_delta_amount_0_unsigned(
     mut sqrt_ratio_b_x64: u128,
     liquidity: u128,
     round_up: bool,
-) -> Result<u64> {
+) -> anyhow::Result<u64> {
     // sqrt_ratio_a_x64 should hold the smaller value
     if sqrt_ratio_a_x64 > sqrt_ratio_b_x64 {
         std::mem::swap(&mut sqrt_ratio_a_x64, &mut sqrt_ratio_b_x64);
@@ -183,17 +210,19 @@ pub fn get_delta_amount_0_unsigned(
         U256::div_rounding_up(
             numerator_1
                 .mul_div_ceil(numerator_2, U256::from(sqrt_ratio_b_x64))
-                .unwrap(),
+                .ok_or(anyhow!("Error in mul_div_ceil get_delta_amount_0_unsigned"))?,
             U256::from(sqrt_ratio_a_x64),
         )
     } else {
         numerator_1
             .mul_div_floor(numerator_2, U256::from(sqrt_ratio_b_x64))
-            .unwrap()
+            .ok_or(anyhow!(
+                "Error in mul_div_floor get_delta_amount_0_unsigned"
+            ))?
             / U256::from(sqrt_ratio_a_x64)
     };
     if result > U256::from(u64::MAX) {
-        return Err(ErrorCode::MaxTokenOverflow.into());
+        return Err(anyhow!(ErrorCode::MaxTokenOverflow));
     }
     Ok(result.as_u64())
 }
@@ -205,7 +234,7 @@ pub fn get_delta_amount_1_unsigned(
     mut sqrt_ratio_b_x64: u128,
     liquidity: u128,
     round_up: bool,
-) -> Result<u64> {
+) -> anyhow::Result<u64> {
     // sqrt_ratio_a_x64 should hold the smaller value
     if sqrt_ratio_a_x64 > sqrt_ratio_b_x64 {
         std::mem::swap(&mut sqrt_ratio_a_x64, &mut sqrt_ratio_b_x64);
@@ -222,9 +251,9 @@ pub fn get_delta_amount_1_unsigned(
             U256::from(fixed_point_64::Q64),
         )
     }
-    .unwrap();
+    .ok_or(anyhow!("get_delta_amount_1_unsigned result is None"))?;
     if result > U256::from(u64::MAX) {
-        return Err(ErrorCode::MaxTokenOverflow.into());
+        return Err(anyhow!(ErrorCode::MaxTokenOverflow));
     }
     Ok(result.as_u64())
 }
@@ -234,19 +263,19 @@ pub fn get_delta_amount_0_signed(
     sqrt_ratio_a_x64: u128,
     sqrt_ratio_b_x64: u128,
     liquidity: i128,
-) -> Result<u64> {
+) -> anyhow::Result<u64> {
     if liquidity < 0 {
         get_delta_amount_0_unsigned(
             sqrt_ratio_a_x64,
             sqrt_ratio_b_x64,
-            u128::try_from(-liquidity).unwrap(),
+            u128::try_from(-liquidity)?,
             false,
         )
     } else {
         get_delta_amount_0_unsigned(
             sqrt_ratio_a_x64,
             sqrt_ratio_b_x64,
-            u128::try_from(liquidity).unwrap(),
+            u128::try_from(liquidity)?,
             true,
         )
     }
@@ -257,19 +286,19 @@ pub fn get_delta_amount_1_signed(
     sqrt_ratio_a_x64: u128,
     sqrt_ratio_b_x64: u128,
     liquidity: i128,
-) -> Result<u64> {
+) -> anyhow::Result<u64> {
     if liquidity < 0 {
         get_delta_amount_1_unsigned(
             sqrt_ratio_a_x64,
             sqrt_ratio_b_x64,
-            u128::try_from(-liquidity).unwrap(),
+            u128::try_from(-liquidity)?,
             false,
         )
     } else {
         get_delta_amount_1_unsigned(
             sqrt_ratio_a_x64,
             sqrt_ratio_b_x64,
-            u128::try_from(liquidity).unwrap(),
+            u128::try_from(liquidity)?,
             true,
         )
     }
@@ -281,7 +310,7 @@ pub fn get_delta_amounts_signed(
     tick_lower: i32,
     tick_upper: i32,
     liquidity_delta: i128,
-) -> Result<(u64, u64)> {
+) -> anyhow::Result<(u64, u64)> {
     let mut amount_0 = 0;
     let mut amount_1 = 0;
     if tick_current < tick_lower {
@@ -289,28 +318,24 @@ pub fn get_delta_amounts_signed(
             tick_math::get_sqrt_price_at_tick(tick_lower)?,
             tick_math::get_sqrt_price_at_tick(tick_upper)?,
             liquidity_delta,
-        )
-        .unwrap();
+        )?;
     } else if tick_current < tick_upper {
         amount_0 = get_delta_amount_0_signed(
             sqrt_price_x64_current,
             tick_math::get_sqrt_price_at_tick(tick_upper)?,
             liquidity_delta,
-        )
-        .unwrap();
+        )?;
         amount_1 = get_delta_amount_1_signed(
             tick_math::get_sqrt_price_at_tick(tick_lower)?,
             sqrt_price_x64_current,
             liquidity_delta,
-        )
-        .unwrap();
+        )?;
     } else {
         amount_1 = get_delta_amount_1_signed(
             tick_math::get_sqrt_price_at_tick(tick_lower)?,
             tick_math::get_sqrt_price_at_tick(tick_upper)?,
             liquidity_delta,
-        )
-        .unwrap();
+        )?;
     }
     Ok((amount_0, amount_1))
 }

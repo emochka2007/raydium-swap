@@ -23,8 +23,8 @@ pub fn create_init_token(
     owner: &Pubkey,
     funding: &Pubkey,
     lamports: u64,
-) -> Vec<Instruction> {
-    vec![
+) -> anyhow::Result<Vec<Instruction>> {
+    Ok(vec![
         create_account(
             funding,
             token,
@@ -32,8 +32,8 @@ pub fn create_init_token(
             165, // spl_token::state::Account::LEN
             &spl_token::id(),
         ),
-        spl_token::instruction::initialize_account(&spl_token::id(), token, mint, owner).unwrap(),
-    ]
+        spl_token::instruction::initialize_account(&spl_token::id(), token, mint, owner)?,
+    ])
 }
 
 pub fn create_init_mint(
@@ -42,8 +42,8 @@ pub fn create_init_mint(
     mint_authority: &Pubkey,
     decimals: u8,
     lamports: u64,
-) -> Vec<Instruction> {
-    vec![
+) -> anyhow::Result<Vec<Instruction>> {
+    Ok(vec![
         create_account(
             funding,
             mint,
@@ -57,9 +57,8 @@ pub fn create_init_mint(
             mint_authority,
             None,
             decimals,
-        )
-        .unwrap(),
-    ]
+        )?,
+    ])
 }
 
 pub fn mint_to(

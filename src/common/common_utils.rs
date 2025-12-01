@@ -1,8 +1,7 @@
 use crate::common::{TEN_THOUSAND, TransferFeeInfo};
 use anchor_lang::AccountDeserialize;
-use anyhow::{Result, format_err};
+use anyhow::{Result, anyhow, format_err};
 use solana_address::Address;
-use solana_client::rpc_client::RpcClient;
 use solana_program_pack::Pack as SolanaProgramPack;
 use solana_sdk::{account::Account as CliAccount, pubkey::Pubkey, signer::keypair::Keypair};
 use spl_token::solana_program::program_pack::Pack;
@@ -52,18 +51,8 @@ pub fn unpack_token<'a>(owner: &Address, token_data: &'a [u8]) -> Result<TokenAc
             token_data,
         )?))
     } else {
-        unreachable!()
+        Err(anyhow!("owner is not spl program"))
     }
-    // Try to unpack legacy SPL token account data first, then fall back to SPL 2022.
-    // match unpack_spl(token_data) {
-    //     Ok(info) => Ok(TokenAccountState::SplToken(info)),
-    //     Err(e) => {
-    //         warn!("Error decoding legacy, trying spl2022 {:?}", e);
-    //         Ok(TokenAccountState::SplToken2022(unpack_spl_2022(
-    //             token_data,
-    //         )?))
-    //     }
-    // }
 }
 
 pub fn unpack_spl(token_data: &[u8]) -> Result<spl_token::state::Account> {
@@ -84,10 +73,10 @@ pub fn unpack_spl_2022(token_data: &[u8]) -> Result<StateWithExtensions<'_, Acco
     // Guard against accidentally passing a mint (82 bytes) or other
     // non‑token account data into the SPL 2022 `Account` unpacker,
     // which would otherwise panic inside the underlying library.
-    if token_data.len() < spl_token_2022::state::Account::LEN {
+    if token_data.len() < Account::LEN {
         return Err(format_err!(
             "invalid spl-token-2022 token account length: expected at least {}, got {}",
-            spl_token_2022::state::Account::LEN,
+            Account::LEN,
             token_data.len()
         ));
     }
@@ -107,7 +96,7 @@ pub fn deserialize_anchor_account<T: AccountDeserialize>(account: &CliAccount) -
 pub fn deserialize_account<T: Copy>(account: &CliAccount, is_anchor_account: bool) -> Result<T> {
     let mut account_data = account.data.as_slice();
     if is_anchor_account {
-        account_data = &account_data[8..std::mem::size_of::<T>() + 8];
+        account_data = &account_data[8..size_of::<T>() + 8];
     }
     Ok(unsafe { *(&account_data[0] as *const u8 as *const T) })
 }
@@ -123,50 +112,22 @@ pub async fn get_pool_mints_inverse_fee(
     let rsps = rpc_client.get_multiple_accounts(&load_accounts).await?;
     let epoch = rpc_client.get_epoch_info().await?.epoch;
     // todo fix
-    let mint0_account = rsps[0].clone().ok_or("load mint0 rps error!").unwrap();
-    let mint1_account = rsps[1].clone().ok_or("load mint0 rps error!").unwrap();
+    let mint0_account = rsps[0].clone().ok_or(anyhow!("load mint0 rps error!"))?;
+    let mint1_account = rsps[1].clone().ok_or(anyhow!("load mint0 rps error!"))?;
     let mint0_state = unpack_mint(&mint0_account.data)?;
     let mint1_state = unpack_mint(&mint1_account.data)?;
     Ok((
         TransferFeeInfo {
             mint: token_mint_0,
             owner: mint0_account.owner,
-            transfer_fee: get_transfer_inverse_fee(&mint0_state, post_fee_amount_0, epoch),
+            transfer_fee: get_transfer_inverse_fee(&mint0_state, post_fee_amount_0, epoch)?,
         },
         TransferFeeInfo {
             mint: token_mint_1,
             owner: mint1_account.owner,
-            transfer_fee: get_transfer_inverse_fee(&mint1_state, post_fee_amount_1, epoch),
+            transfer_fee: get_transfer_inverse_fee(&mint1_state, post_fee_amount_1, epoch)?,
         },
     ))
-}
-
-pub fn get_pool_mints_transfer_fee(
-    rpc_client: &RpcClient,
-    token_mint_0: Pubkey,
-    token_mint_1: Pubkey,
-    pre_fee_amount_0: u64,
-    pre_fee_amount_1: u64,
-) -> (TransferFeeInfo, TransferFeeInfo) {
-    let load_accounts = vec![token_mint_0, token_mint_1];
-    let rsps = rpc_client.get_multiple_accounts(&load_accounts).unwrap();
-    let epoch = rpc_client.get_epoch_info().unwrap().epoch;
-    let mint0_account = rsps[0].clone().ok_or("load mint0 rps error!").unwrap();
-    let mint1_account = rsps[1].clone().ok_or("load mint0 rps error!").unwrap();
-    let mint0_state = unpack_mint(&mint0_account.data).unwrap();
-    let mint1_state = unpack_mint(&mint1_account.data).unwrap();
-    (
-        TransferFeeInfo {
-            mint: token_mint_0,
-            owner: mint0_account.owner,
-            transfer_fee: get_transfer_fee(&mint0_state, epoch, pre_fee_amount_0),
-        },
-        TransferFeeInfo {
-            mint: token_mint_1,
-            owner: mint1_account.owner,
-            transfer_fee: get_transfer_fee(&mint1_state, epoch, pre_fee_amount_1),
-        },
-    )
 }
 
 /// Calculate the fee for output amount
@@ -174,18 +135,18 @@ pub fn get_transfer_inverse_fee<S: BaseState + SolanaProgramPack>(
     account_state: &StateWithExtensions<S>,
     epoch: u64,
     post_fee_amount: u64,
-) -> u64 {
+) -> Result<u64> {
     if let Ok(transfer_fee_config) = account_state.get_extension::<TransferFeeConfig>() {
         let transfer_fee = transfer_fee_config.get_epoch_fee(epoch);
         if u16::from(transfer_fee.transfer_fee_basis_points) == MAX_FEE_BASIS_POINTS {
-            u64::from(transfer_fee.maximum_fee)
+            Ok(u64::from(transfer_fee.maximum_fee))
         } else {
-            transfer_fee_config
+            Ok(transfer_fee_config
                 .calculate_inverse_epoch_fee(epoch, post_fee_amount)
-                .unwrap()
+                .ok_or(anyhow!("calculate_inverse_epoch_fee returned None"))?)
         }
     } else {
-        0
+        Ok(0)
     }
 }
 

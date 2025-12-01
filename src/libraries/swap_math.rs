@@ -4,6 +4,8 @@ use super::liquidity_math;
 use super::sqrt_price_math;
 use crate::states::config::FEE_RATE_DENOMINATOR_VALUE;
 use anchor_lang::prelude::*;
+use anyhow::anyhow;
+
 /// Result of a swap step
 #[derive(Default, Debug)]
 pub struct SwapStep {
@@ -24,7 +26,7 @@ pub fn compute_swap_step(
     is_base_input: bool,
     zero_for_one: bool,
     block_timestamp: u32,
-) -> Result<SwapStep> {
+) -> anyhow::Result<SwapStep> {
     // let exact_in = amount_remaining >= 0;
     let mut swap_step = SwapStep::default();
     if is_base_input {
@@ -35,7 +37,7 @@ pub fn compute_swap_step(
                 (FEE_RATE_DENOMINATOR_VALUE - fee_rate).into(),
                 u64::from(FEE_RATE_DENOMINATOR_VALUE),
             )
-            .unwrap();
+            .ok_or(anyhow!("error in mul_div_floor for amount_remaining"))?;
 
         let amount_in = calculate_amount_in_range(
             sqrt_price_current_x64,
@@ -45,8 +47,8 @@ pub fn compute_swap_step(
             is_base_input,
             block_timestamp,
         )?;
-        if amount_in.is_some() {
-            swap_step.amount_in = amount_in.unwrap();
+        if let Some(amount) = amount_in {
+            swap_step.amount_in = amount;
         }
 
         swap_step.sqrt_price_next_x64 =
@@ -58,7 +60,7 @@ pub fn compute_swap_step(
                     liquidity,
                     amount_remaining_less_fee,
                     zero_for_one,
-                )
+                )?
             };
     } else {
         let amount_out = calculate_amount_in_range(
@@ -69,8 +71,8 @@ pub fn compute_swap_step(
             is_base_input,
             block_timestamp,
         )?;
-        if amount_out.is_some() {
-            swap_step.amount_out = amount_out.unwrap();
+        if let Some(amount_out) = amount_out {
+            swap_step.amount_out = amount_out;
         }
         // In exact output case, amount_remaining is negative
         swap_step.sqrt_price_next_x64 =
@@ -82,7 +84,7 @@ pub fn compute_swap_step(
                     liquidity,
                     amount_remaining,
                     zero_for_one,
-                )
+                )?
             }
     }
 
@@ -136,7 +138,9 @@ pub fn compute_swap_step(
         if is_base_input && swap_step.sqrt_price_next_x64 != sqrt_price_target_x64 {
             // we didn't reach the target, so take the remainder of the maximum input as fee
             // swap dust is granted as fee
-            amount_remaining.checked_sub(swap_step.amount_in).unwrap()
+            amount_remaining
+                .checked_sub(swap_step.amount_in)
+                .ok_or(anyhow!("swap_step.amount_in is more than amount_remaining"))?
         } else {
             // take pip percentage as fee
             swap_step
@@ -145,16 +149,15 @@ pub fn compute_swap_step(
                     fee_rate.into(),
                     (FEE_RATE_DENOMINATOR_VALUE - fee_rate).into(),
                 )
-                .unwrap()
+                .ok_or(anyhow!("take pip percentage as fee failed"))?
         };
 
     Ok(swap_step)
 }
 
-/// Pre calcumate amount_in or amount_out for the specified price range
-/// The amount maybe overflow of u64 due to the `sqrt_price_target_x64` maybe unreasonable.
-/// Therefore, this situation needs to be handled in `compute_swap_step` to recalculate the price that can be reached based on the amount.
-#[cfg(not(test))]
+/// Pre‑calculate amount_in or amount_out for the specified price range.
+/// The amount may overflow u64 due to an unreasonable `sqrt_price_target_x64`.
+/// In that case, `compute_swap_step` should recompute the reachable price based on the amount.
 fn calculate_amount_in_range(
     sqrt_price_current_x64: u128,
     sqrt_price_target_x64: u128,
@@ -182,7 +185,9 @@ fn calculate_amount_in_range(
 
         if let Ok(result) = result {
             Ok(Some(result))
-        } else if result.err().unwrap() == ErrorCode::MaxTokenOverflow.into() {
+        } else if let Some(err) = result.err()
+            && err.to_string() == ErrorCode::MaxTokenOverflow.to_string()
+        {
             Ok(None)
         } else {
             Err(ErrorCode::SqrtPriceLimitOverflow.into())
@@ -205,7 +210,9 @@ fn calculate_amount_in_range(
         };
         if let Ok(result) = result {
             Ok(Some(result))
-        } else if result.err().unwrap() == ErrorCode::MaxTokenOverflow.into() {
+        } else if let Some(err) = result.err()
+            && err.to_string() == ErrorCode::MaxTokenOverflow.to_string()
+        {
             Ok(None)
         } else {
             Err(ErrorCode::SqrtPriceLimitOverflow.into())

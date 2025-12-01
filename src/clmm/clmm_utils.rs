@@ -1,18 +1,17 @@
-use crate::clmm::{
-    ClmmSwapChangeResult,
-    StepComputations, SwapState, price_to_sqrt_price_x64,
-};
+use crate::clmm::{ClmmSwapChangeResult, StepComputations, SwapState, price_to_sqrt_price_x64};
 use crate::common::{
-    TokenAccountState, amount_with_slippage, common_utils, deserialize_anchor_account, get_transfer_fee, rpc, unpack_mint, unpack_token,
+    TokenAccountState, amount_with_slippage, common_utils, deserialize_anchor_account,
+    get_transfer_fee, rpc, unpack_mint, unpack_token,
 };
 use crate::libraries::{
-    MAX_SQRT_PRICE_X64, MAX_TICK, MIN_SQRT_PRICE_X64, MIN_TICK, add_delta, compute_swap_step, get_sqrt_price_at_tick, get_tick_at_sqrt_price,
+    MAX_SQRT_PRICE_X64, MAX_TICK, MIN_SQRT_PRICE_X64, MIN_TICK, add_delta, compute_swap_step,
+    get_sqrt_price_at_tick, get_tick_at_sqrt_price,
 };
 use crate::states::{
     AmmConfig, PoolState, TICK_ARRAY_SEED, TickArrayBitmapExtension, TickArrayState, TickState,
 };
 use anchor_lang::solana_program::program_option::COption as AnchorCOption;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use arrayref::array_ref;
 use solana_address::Address;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -22,6 +21,7 @@ use std::{
     collections::VecDeque,
     ops::{DerefMut, Neg},
 };
+use tracing::debug;
 
 pub async fn calculate_swap_change(
     rpc_client: &RpcClient,
@@ -37,13 +37,15 @@ pub async fn calculate_swap_change(
     let pool_id = solana_address::Address::from(pool_id.to_bytes());
     let pool_state = rpc::get_anchor_account::<PoolState>(rpc_client, &pool_id)
         .await?
-        .unwrap();
+        .ok_or(anyhow!("Pool state was not found by rpc"))?;
     // load mult account
-    let load_accounts: Vec<Address> = [input_token,
+    let load_accounts: Vec<Address> = [
+        input_token,
         pool_state.amm_config,
         pool_state.token_mint_0,
         pool_state.token_mint_1,
-        tickarray_bitmap_extension]
+        tickarray_bitmap_extension,
+    ]
     .iter()
     .map(|pubkey| Address::from(pubkey.to_bytes()))
     .collect();
@@ -57,12 +59,24 @@ pub async fn calculate_swap_change(
         mint1_account,
         tickarray_bitmap_extension_account,
     ] = array_ref![rsps, 0, 5];
-    let mint0_token_program = mint0_account.as_ref().unwrap().owner;
-    let mint1_token_program = mint1_account.as_ref().unwrap().owner;
-    let input_mint_owner = user_input_account.as_ref().unwrap().owner;
+    let mint0_token_program = mint0_account
+        .as_ref()
+        .ok_or(anyhow!("Mint token program is None"))?
+        .owner;
+    let mint1_token_program = mint1_account
+        .as_ref()
+        .ok_or(anyhow!("Mint token program is None"))?
+        .owner;
+    let input_mint_owner = user_input_account
+        .as_ref()
+        .ok_or(anyhow!("Mint token program is None"))?
+        .owner;
     let user_input_state = match unpack_token(
         &input_mint_owner,
-        &user_input_account.as_ref().unwrap().data,
+        &user_input_account
+            .as_ref()
+            .ok_or(anyhow!("Mint token program is None"))?
+            .data,
     )? {
         TokenAccountState::SplToken(info) => {
             // Convert legacy SPL token account representation into the SPL 2022
@@ -86,14 +100,28 @@ pub async fn calculate_swap_change(
         }
         TokenAccountState::SplToken2022(state) => state.base,
     };
-    // let user_input_state: Account = unpack_spl_2022(&user_input_account.as_ref().unwrap().data)?;
-    let mint0_state = unpack_mint(&mint0_account.as_ref().unwrap().data)?;
-    let mint1_state = unpack_mint(&mint1_account.as_ref().unwrap().data)?;
-    let tickarray_bitmap_extension_state = deserialize_anchor_account::<TickArrayBitmapExtension>(
-        tickarray_bitmap_extension_account.as_ref().unwrap(),
+    let mint0_state = unpack_mint(
+        &mint0_account
+            .as_ref()
+            .ok_or(anyhow!("Mint token program is None"))?
+            .data,
     )?;
-    let amm_config_state =
-        deserialize_anchor_account::<AmmConfig>(amm_config_account.as_ref().unwrap())?;
+    let mint1_state = unpack_mint(
+        &mint1_account
+            .as_ref()
+            .ok_or(anyhow!("Mint token program is None"))?
+            .data,
+    )?;
+    let tickarray_bitmap_extension_state = deserialize_anchor_account::<TickArrayBitmapExtension>(
+        tickarray_bitmap_extension_account
+            .as_ref()
+            .ok_or(anyhow!("Mint token program is None"))?,
+    )?;
+    let amm_config_state = deserialize_anchor_account::<AmmConfig>(
+        amm_config_account
+            .as_ref()
+            .ok_or(anyhow!("Mint token program is None"))?,
+    )?;
 
     let (
         zero_for_one,
@@ -124,7 +152,7 @@ pub async fn calculate_swap_change(
             mint0_token_program,
         )
     } else {
-        panic!("input tokens not match pool vaults");
+        return Err(anyhow!("input tokens not match pool vaults"));
     };
     let transfer_fee = if base_in {
         if zero_for_one {
@@ -135,7 +163,9 @@ pub async fn calculate_swap_change(
     } else {
         0
     };
-    let amount_specified = amount.checked_sub(transfer_fee).unwrap();
+    let amount_specified = amount
+        .checked_sub(transfer_fee)
+        .ok_or(anyhow!("Amount is less than transfer fee"))?;
     // load tick_arrays
     let mut tick_arrays = load_cur_and_next_five_tick_array(
         rpc_client,
@@ -146,12 +176,12 @@ pub async fn calculate_swap_change(
         zero_for_one,
     )
     .await?;
-    let sqrt_price_limit_x64 = if limit_price.is_some() {
+    let sqrt_price_limit_x64 = if let Some(limit_price) = limit_price {
         let sqrt_price_x64 = price_to_sqrt_price_x64(
-            limit_price.unwrap(),
+            limit_price,
             pool_state.mint_decimals_0,
             pool_state.mint_decimals_1,
-        );
+        )?;
         Some(sqrt_price_x64)
     } else {
         None
@@ -167,9 +197,8 @@ pub async fn calculate_swap_change(
             &pool_state,
             &tickarray_bitmap_extension_state,
             &mut tick_arrays,
-        )
-        .unwrap();
-    println!(
+        )?;
+    debug!(
         "amount:{}, other_amount_threshold:{}",
         amount, other_amount_threshold
     );
@@ -195,9 +224,9 @@ pub async fn calculate_swap_change(
         other_amount_threshold = amount_with_slippage(other_amount_threshold, slippage_bps, true)?;
         // calc max in with transfer_fee
         let transfer_fee = if zero_for_one {
-            common_utils::get_transfer_inverse_fee(&mint0_state, epoch, other_amount_threshold)
+            common_utils::get_transfer_inverse_fee(&mint0_state, epoch, other_amount_threshold)?
         } else {
-            common_utils::get_transfer_inverse_fee(&mint1_state, epoch, other_amount_threshold)
+            common_utils::get_transfer_inverse_fee(&mint1_state, epoch, other_amount_threshold)?
         };
         other_amount_threshold += transfer_fee;
     }
@@ -252,7 +281,8 @@ async fn load_cur_and_next_five_tick_array(
         if next_tick_array_index.is_none() {
             break;
         }
-        current_valid_tick_array_start_index = next_tick_array_index.unwrap();
+        current_valid_tick_array_start_index =
+            next_tick_array_index.ok_or(anyhow!("next_tick_array_index is None"))?;
         tick_array_keys.push(
             Pubkey::find_program_address(
                 &[
@@ -273,7 +303,9 @@ async fn load_cur_and_next_five_tick_array(
     let tick_array_rsps = rpc_client.get_multiple_accounts(&tick_array_keys).await?;
     let mut tick_arrays = VecDeque::new();
     for tick_array in tick_array_rsps {
-        let tick_array_state = deserialize_anchor_account::<TickArrayState>(&tick_array.unwrap())?;
+        let tick_array_state = deserialize_anchor_account::<TickArrayState>(
+            &tick_array.ok_or(anyhow!("Tick array is None"))?,
+        )?;
         tick_arrays.push_back(tick_array_state);
     }
     Ok(tick_arrays)
@@ -288,10 +320,9 @@ pub fn get_out_put_amount_and_remaining_accounts(
     pool_state: &PoolState,
     tickarray_bitmap_extension: &TickArrayBitmapExtension,
     tick_arrays: &mut VecDeque<TickArrayState>,
-) -> Result<(u64, VecDeque<i32>), &'static str> {
+) -> Result<(u64, VecDeque<i32>)> {
     let (is_pool_current_tick_array, current_valid_tick_array_start_index) = pool_state
-        .get_first_initialized_tick_array(&Some(*tickarray_bitmap_extension), zero_for_one)
-        .unwrap();
+        .get_first_initialized_tick_array(&Some(*tickarray_bitmap_extension), zero_for_one)?;
 
     let (amount_calculated, tick_array_start_index_vec) = swap_compute(
         zero_for_one,
@@ -305,7 +336,7 @@ pub fn get_out_put_amount_and_remaining_accounts(
         tickarray_bitmap_extension,
         tick_arrays,
     )?;
-    println!("tick_array_start_index:{:?}", tick_array_start_index_vec);
+    debug!("tick_array_start_index:{:?}", tick_array_start_index_vec);
 
     Ok((amount_calculated, tick_array_start_index_vec))
 }
@@ -321,9 +352,9 @@ fn swap_compute(
     pool_state: &PoolState,
     tickarray_bitmap_extension: &TickArrayBitmapExtension,
     tick_arrays: &mut VecDeque<TickArrayState>,
-) -> Result<(u64, VecDeque<i32>), &'static str> {
+) -> Result<(u64, VecDeque<i32>)> {
     if amount_specified == 0 {
-        return Err("amountSpecified must not be 0");
+        return Err(anyhow!("amountSpecified must not be 0"));
     }
     let sqrt_price_limit_x64 = if sqrt_price_limit_x64 == 0 {
         if zero_for_one {
@@ -336,17 +367,21 @@ fn swap_compute(
     };
     if zero_for_one {
         if sqrt_price_limit_x64 < MIN_SQRT_PRICE_X64 {
-            return Err("sqrt_price_limit_x64 must greater than MIN_SQRT_PRICE_X64");
+            return Err(anyhow!(
+                "sqrt_price_limit_x64 must greater than MIN_SQRT_PRICE_X64"
+            ));
         }
         if sqrt_price_limit_x64 >= pool_state.sqrt_price_x64 {
-            return Err("sqrt_price_limit_x64 must smaller than current");
+            return Err(anyhow!("sqrt_price_limit_x64 must smaller than current"));
         }
     } else {
         if sqrt_price_limit_x64 > MAX_SQRT_PRICE_X64 {
-            return Err("sqrt_price_limit_x64 must smaller than MAX_SQRT_PRICE_X64");
+            return Err(anyhow!(
+                "sqrt_price_limit_x64 must smaller than MAX_SQRT_PRICE_X64"
+            ));
         }
         if sqrt_price_limit_x64 <= pool_state.sqrt_price_x64 {
-            return Err("sqrt_price_limit_x64 must greater than current");
+            return Err(anyhow!("sqrt_price_limit_x64 must greater than current"));
         }
     }
     let mut tick_match_current_tick_array = is_pool_current_tick_array;
@@ -359,9 +394,11 @@ fn swap_compute(
         liquidity: pool_state.liquidity,
     };
 
-    let mut tick_array_current = tick_arrays.pop_front().unwrap();
+    let mut tick_array_current = tick_arrays
+        .pop_front()
+        .ok_or(anyhow!("could not pop front from tick_arrays"))?;
     if tick_array_current.start_tick_index != current_valid_tick_array_start_index {
-        return Err("tick array start tick index does not match");
+        return Err(anyhow!("tick array start tick index does not match"));
     }
     let mut tick_array_start_index_vec = VecDeque::new();
     tick_array_start_index_vec.push_back(tick_array_current.start_tick_index);
@@ -373,23 +410,18 @@ fn swap_compute(
         && state.tick > MIN_TICK
     {
         if loop_count > 10 {
-            return Err("loop_count limit");
+            return Err(anyhow!("loop_count limit"));
         }
         let mut step = StepComputations::default();
         step.sqrt_price_start_x64 = state.sqrt_price_x64;
         // save the bitmap, and the tick account if it is initialized
         let mut next_initialized_tick = if let Some(tick_state) = tick_array_current
-            .next_initialized_tick(state.tick, pool_state.tick_spacing, zero_for_one)
-            .unwrap()
+            .next_initialized_tick(state.tick, pool_state.tick_spacing, zero_for_one)?
         {
             Box::new(*tick_state)
         } else if !tick_match_current_tick_array {
             tick_match_current_tick_array = true;
-            Box::new(
-                *tick_array_current
-                    .first_initialized_tick(zero_for_one)
-                    .unwrap(),
-            )
+            Box::new(*tick_array_current.first_initialized_tick(zero_for_one)?)
         } else {
             Box::new(TickState::default())
         };
@@ -399,20 +431,22 @@ fn swap_compute(
                     &Some(*tickarray_bitmap_extension),
                     current_valid_tick_array_start_index,
                     zero_for_one,
-                )
-                .unwrap();
-            tick_array_current = tick_arrays.pop_front().unwrap();
+                )?;
+            tick_array_current = tick_arrays
+                .pop_front()
+                .ok_or(anyhow!("Could not pop_front from tick_arrays"))?;
             if current_vaild_tick_array_start_index.is_none() {
-                return Err("tick array start tick index out of range limit");
+                return Err(anyhow!("tick array start tick index out of range limit"));
             }
-            if tick_array_current.start_tick_index != current_vaild_tick_array_start_index.unwrap()
+            if tick_array_current.start_tick_index
+                != current_vaild_tick_array_start_index
+                    .ok_or(anyhow!("current_vaild_tick_array_start_index is None"))?
             {
-                return Err("tick array start tick index does not match");
+                return Err(anyhow!("tick array start tick index does not match"));
             }
             tick_array_start_index_vec.push_back(tick_array_current.start_tick_index);
-            let mut first_initialized_tick = tick_array_current
-                .first_initialized_tick(zero_for_one)
-                .unwrap();
+            let mut first_initialized_tick =
+                tick_array_current.first_initialized_tick(zero_for_one)?;
 
             next_initialized_tick = Box::new(*first_initialized_tick.deref_mut());
         }
@@ -424,7 +458,7 @@ fn swap_compute(
             step.tick_next = MAX_TICK;
         }
 
-        step.sqrt_price_next_x64 = get_sqrt_price_at_tick(step.tick_next).unwrap();
+        step.sqrt_price_next_x64 = get_sqrt_price_at_tick(step.tick_next)?;
 
         let target_price = if (zero_for_one && step.sqrt_price_next_x64 < sqrt_price_limit_x64)
             || (!zero_for_one && step.sqrt_price_next_x64 > sqrt_price_limit_x64)
@@ -442,8 +476,7 @@ fn swap_compute(
             is_base_input,
             zero_for_one,
             1,
-        )
-        .unwrap();
+        )?;
         state.sqrt_price_x64 = swap_step.sqrt_price_next_x64;
         step.amount_in = swap_step.amount_in;
         step.amount_out = swap_step.amount_out;
@@ -453,20 +486,26 @@ fn swap_compute(
             state.amount_specified_remaining = state
                 .amount_specified_remaining
                 .checked_sub(step.amount_in + step.fee_amount)
-                .unwrap();
+                .ok_or(anyhow!(
+                    "amount_specified_remaining is less than step.amount_in + step.fee_amount "
+                ))?;
             state.amount_calculated = state
                 .amount_calculated
                 .checked_add(step.amount_out)
-                .unwrap();
+                .ok_or(anyhow!("amount_calculated is less than step.amount_out "))?;
         } else {
             state.amount_specified_remaining = state
                 .amount_specified_remaining
                 .checked_sub(step.amount_out)
-                .unwrap();
+                .ok_or(anyhow!(
+                    "amount_specified_remaining is less than step.amount_out "
+                ))?;
             state.amount_calculated = state
                 .amount_calculated
                 .checked_add(step.amount_in + step.fee_amount)
-                .unwrap();
+                .ok_or(anyhow!(
+                    "amount_calculated is less than step.amount_in + step.fee_amount"
+                ))?;
         }
 
         if state.sqrt_price_x64 == step.sqrt_price_next_x64 {
@@ -476,7 +515,7 @@ fn swap_compute(
                 if zero_for_one {
                     liquidity_net = liquidity_net.neg();
                 }
-                state.liquidity = add_delta(state.liquidity, liquidity_net).unwrap();
+                state.liquidity = add_delta(state.liquidity, liquidity_net)?;
             }
 
             state.tick = if zero_for_one {
@@ -486,7 +525,7 @@ fn swap_compute(
             };
         } else if state.sqrt_price_x64 != step.sqrt_price_start_x64 {
             // recompute unless we're on a lower tick boundary (i.e. already transitioned ticks), and haven't moved
-            state.tick = get_tick_at_sqrt_price(state.sqrt_price_x64).unwrap();
+            state.tick = get_tick_at_sqrt_price(state.sqrt_price_x64)?;
         }
         loop_count += 1;
     }

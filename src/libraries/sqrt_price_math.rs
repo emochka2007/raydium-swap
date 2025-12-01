@@ -1,6 +1,7 @@
 use super::full_math::MulDiv;
 use super::unsafe_math::UnsafeMathTrait;
-use super::{fixed_point_64, U256};
+use super::{U256, fixed_point_64};
+use anyhow::anyhow;
 
 /// Gets the next sqrt price √P' given a delta of token_0
 ///
@@ -32,9 +33,9 @@ pub fn get_next_sqrt_price_from_amount_0_rounding_up(
     liquidity: u128,
     amount: u64,
     add: bool,
-) -> u128 {
+) -> anyhow::Result<u128> {
     if amount == 0 {
-        return sqrt_price_x64;
+        return Ok(sqrt_price_x64);
     };
     let numerator_1 = (U256::from(liquidity)) << fixed_point_64::RESOLUTION;
 
@@ -42,29 +43,33 @@ pub fn get_next_sqrt_price_from_amount_0_rounding_up(
         if let Some(product) = U256::from(amount).checked_mul(U256::from(sqrt_price_x64)) {
             let denominator = numerator_1 + product;
             if denominator >= numerator_1 {
-                return numerator_1
+                return Ok(numerator_1
                     .mul_div_ceil(U256::from(sqrt_price_x64), denominator)
-                    .unwrap()
-                    .as_u128();
+                    .ok_or(anyhow!(
+                        "Error in get_next_sqrt_price_from_amount_0_rounding_up with mul_div_ceil"
+                    ))?
+                    .as_u128());
             };
         }
 
-        U256::div_rounding_up(
+        Ok(U256::div_rounding_up(
             numerator_1,
             (numerator_1 / U256::from(sqrt_price_x64))
                 .checked_add(U256::from(amount))
-                .unwrap(),
+                .ok_or(anyhow!("Overflow in checked_add in U256::div_rounding_up"))?,
         )
-        .as_u128()
+        .as_u128())
     } else {
         let product = U256::from(amount)
-                .checked_mul(U256::from(sqrt_price_x64))
-                .unwrap();
-        let denominator = numerator_1.checked_sub(product).unwrap();
-        numerator_1
+            .checked_mul(U256::from(sqrt_price_x64))
+            .ok_or(anyhow!("Product mul is None"))?;
+        let denominator = numerator_1
+            .checked_sub(product)
+            .ok_or(anyhow!("product is more than denominator"))?;
+        Ok(numerator_1
             .mul_div_ceil(U256::from(sqrt_price_x64), denominator)
-            .unwrap()
-            .as_u128()
+            .ok_or(anyhow!("Numerator mul_div_ceil is none"))?
+            .as_u128())
     }
 }
 
@@ -87,16 +92,24 @@ pub fn get_next_sqrt_price_from_amount_1_rounding_down(
     liquidity: u128,
     amount: u64,
     add: bool,
-) -> u128 {
+) -> anyhow::Result<u128> {
     if add {
         let quotient = U256::from(u128::from(amount) << fixed_point_64::RESOLUTION) / liquidity;
-        sqrt_price_x64.checked_add(quotient.as_u128()).unwrap()
+        sqrt_price_x64
+            .checked_add(quotient.as_u128())
+            .ok_or(anyhow!(
+                "Overflow in add for get_next_sqrt_price_from_amount_1_rounding_down"
+            ))
     } else {
         let quotient = U256::div_rounding_up(
             U256::from(u128::from(amount) << fixed_point_64::RESOLUTION),
             U256::from(liquidity),
         );
-        sqrt_price_x64.checked_sub(quotient.as_u128()).unwrap()
+        sqrt_price_x64
+            .checked_sub(quotient.as_u128())
+            .ok_or(anyhow!(
+                "Underflow in sub for get_next_sqrt_price_from_amount_1_rounding_down"
+            ))
     }
 }
 
@@ -107,7 +120,7 @@ pub fn get_next_sqrt_price_from_input(
     liquidity: u128,
     amount_in: u64,
     zero_for_one: bool,
-) -> u128 {
+) -> anyhow::Result<u128> {
     assert!(sqrt_price_x64 > 0);
     assert!(liquidity > 0);
 
@@ -128,7 +141,7 @@ pub fn get_next_sqrt_price_from_output(
     liquidity: u128,
     amount_out: u64,
     zero_for_one: bool,
-) -> u128 {
+) -> anyhow::Result<u128> {
     assert!(sqrt_price_x64 > 0);
     assert!(liquidity > 0);
 

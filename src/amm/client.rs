@@ -167,16 +167,6 @@ impl AmmSwapClient {
             .context("Raydium amm get failed")?
             .error_for_status()
             .context("Raydium non-200")?;
-        println!("Response {:?}", response.text().await.unwrap());
-        let response = self
-            .reqwest_client
-            .get(&url)
-            .query(query.unwrap_or(&[]))
-            .send()
-            .await
-            .context("Raydium amm get failed")?
-            .error_for_status()
-            .context("Raydium non-200")?;
 
         Ok(response.json::<T>().await?)
     }
@@ -336,7 +326,11 @@ impl AmmSwapClient {
         })
     }
 
-    async fn get_or_create_token_program(&self, mint: Pubkey) -> anyhow::Result<Pubkey> {
+    async fn get_or_create_token_program(
+        &self,
+        mint: Pubkey,
+        lamports_fee: Option<u64>,
+    ) -> anyhow::Result<Pubkey> {
         let associated_token_account =
             spl_associated_token_account::get_associated_token_address(&self.owner.pubkey(), &mint);
         let balance = self
@@ -360,11 +354,15 @@ impl AmmSwapClient {
                     spl_associated_token_account::instruction::create_associated_token_account(
                         &self.owner.pubkey(),
                         &self.owner.pubkey(),
-                        &spl_token::native_mint::id(),
+                        &mint,
                         &spl_token::id(),
                     ),
                     // Amount is hardcoded based on network fee
-                    transfer(&self.owner.pubkey(), &associated_token_account, 2_500_000),
+                    transfer(
+                        &self.owner.pubkey(),
+                        &associated_token_account,
+                        lamports_fee.unwrap_or(2_500_000),
+                    ),
                     spl_token::instruction::sync_native(
                         &spl_token::id(),
                         &associated_token_account,
@@ -421,7 +419,7 @@ impl AmmSwapClient {
     ) -> anyhow::Result<Signature> {
         let mint_a = Pubkey::try_from(mint_a)?;
         let mint_b = Pubkey::try_from(mint_b)?;
-        self.swap_amm(pool_keys, mint_a, mint_b, amount_in, amount_out)
+        self.swap_amm(pool_keys, mint_a, mint_b, amount_in, amount_out, None)
             .await
     }
 
@@ -432,11 +430,16 @@ impl AmmSwapClient {
         mint_b: Address,
         amount_in: u64,
         amount_out: u64, // out.amount_out means amount 'without' slippage
+        create_program_fee: Option<u64>,
     ) -> anyhow::Result<Signature> {
         let amm_program = Pubkey::from_str_const(AMM_V4);
 
-        let user_token_source = self.get_or_create_token_program(mint_a).await?;
-        let user_token_destination = self.get_or_create_token_program(mint_b).await?;
+        let user_token_source = self
+            .get_or_create_token_program(mint_a, create_program_fee)
+            .await?;
+        let user_token_destination = self
+            .get_or_create_token_program(mint_b, create_program_fee)
+            .await?;
 
         info!(
             "Executing swap from {:?} to {:?}",
