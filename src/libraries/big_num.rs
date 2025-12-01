@@ -3,17 +3,14 @@
 ///! https://github.com/solana-labs/solana/issues/19549
 use uint::construct_uint;
 
-#[allow(unexpected_cfgs)]
 construct_uint! {
     pub struct U128(2);
 }
 
-#[allow(unexpected_cfgs)]
 construct_uint! {
     pub struct U256(4);
 }
 
-#[allow(unexpected_cfgs)]
 construct_uint! {
     pub struct U512(8);
 }
