@@ -1,4 +1,4 @@
-///! Helper functions to get most and least significant non-zero bits
+//! Helper functions to get most and least significant non-zero bits
 use super::big_num::U1024;
 use super::error::ErrorCode;
 use crate::states::tick_array::{TICK_ARRAY_SIZE, TickArrayState, TickState};
@@ -67,7 +67,7 @@ pub fn check_current_tick_array_is_initialized(
         return Ok((true, (compressed - 512) * multiplier));
     }
     // the current bit is not initialized
-    return Ok((false, (compressed - 512) * multiplier));
+    Ok((false, (compressed - 512) * multiplier))
 }
 
 pub fn next_initialized_tick_array_start_index(

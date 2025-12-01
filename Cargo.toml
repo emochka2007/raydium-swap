@@ -34,11 +34,8 @@ dotenvy = "0.15.7"
 raydium-amm-v3 = { git = "https://github.com/raydium-io/raydium-clmm", features = [
     "no-entrypoint",
     "cpi",
-    "client",
 ] }
-anchor-client = "0.32.1"
 spl-token-2022 = "8.0.1"
-solana-account-decoder = "2.3.13"
 serde_json = { version = "1.0.145" }
 base64 = "0.21.7"
 solana-transaction-status = "3.1.2"
@@ -47,10 +44,7 @@ hex = "0.4.3"
 arrayref = "0.3.9"
 solana-pubkey = "2.4.0"
 solana-address = { version = "2.0.0", features = ["decode"] }
-clap = { version = "4.5.20", features = ["derive"] }
-rand = "0.8.5"
 solana-program = "<1.17.0"
-uint = { git = "https://github.com/raydium-io/parity-common", package = "uint" }
+uint = { git = "https://github.com/raydium-io/parity-common", package = "uint", features = ["enable-power"] }
 bytemuck = { version = "1.19.0", features = ["derive", "min_const_generics"] }
 solana-program-pack = "2.2.1"
-solana-program-option = "2.2.1"

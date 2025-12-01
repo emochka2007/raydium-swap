@@ -22,7 +22,7 @@ pub struct PoolInfosResponse {
 #[derive(Debug)]
 pub enum PoolInfosByType {
     /// Standard AMM v4 pool response.
-    Standard(PoolInfosResponse),
+    Standard(ClmmPoolInfosResponse),
     /// Concentrated (CLMM) pool response.
     Concentrated(ClmmPoolInfosResponse),
 }
@@ -187,7 +187,7 @@ pub struct AmmPool {
     pub id: String,
     pub mint_a: Mint,
     pub mint_b: Mint,
-    pub lookup_table_account: String,
+    pub lookup_table_account: Option<String>,
     pub open_time: String,
     pub vault: Vault,
     pub authority: String,
@@ -220,8 +220,8 @@ pub enum PoolType {
 impl Display for PoolType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PoolType::Standard => write!(f, "{}", "standard"),
-            PoolType::Concentrated => write!(f, "{}", "concentrated"),
+            PoolType::Standard => write!(f, "standard"),
+            PoolType::Concentrated => write!(f, "concentrated"),
         }
     }
 }

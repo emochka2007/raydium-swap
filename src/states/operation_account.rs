@@ -40,7 +40,7 @@ impl OperationState {
         operation_owners.retain(|&item| item != Pubkey::default());
         let owners_set: HashSet<Pubkey> = HashSet::from_iter(operation_owners.iter().cloned());
         let mut updated_owner: Vec<Pubkey> = owners_set.into_iter().collect();
-        updated_owner.sort_by(|a, b| a.cmp(b));
+        updated_owner.sort();
         // clear
         self.operation_owners = [Pubkey::default(); OPERATION_SIZE_USIZE];
         // update
@@ -50,7 +50,7 @@ impl OperationState {
     pub fn remove_operation_owner(&mut self, keys: Vec<Pubkey>) {
         let mut operation_owners = self.operation_owners.to_vec();
         // remove keys from operation_owners
-        operation_owners.retain(|x| !keys.contains(&x));
+        operation_owners.retain(|x| !keys.contains(x));
         // clear
         self.operation_owners = [Pubkey::default(); OPERATION_SIZE_USIZE];
         // update
@@ -73,7 +73,7 @@ impl OperationState {
     pub fn remove_whitelist_mint(&mut self, keys: Vec<Pubkey>) {
         let mut whitelist_mints = self.whitelist_mints.to_vec();
         // remove keys from whitelist_mint
-        whitelist_mints.retain(|x| !keys.contains(&x));
+        whitelist_mints.retain(|x| !keys.contains(x));
         // clear
         self.whitelist_mints = [Pubkey::default(); WHITE_MINT_SIZE_USIZE];
         // update

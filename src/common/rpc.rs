@@ -2,17 +2,14 @@ use anchor_lang::AccountDeserialize;
 use anyhow::Result;
 use base64::{Engine, prelude::BASE64_STANDARD};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_client::rpc_config::UiAccountEncoding;
 use solana_client::{
-    rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig, RpcSendTransactionConfig},
-    rpc_filter::RpcFilterType,
-    rpc_request::RpcRequest,
-    rpc_response::{RpcResult, RpcSimulateTransactionResult},
+    rpc_config::RpcSendTransactionConfig, rpc_request::RpcRequest,
+    rpc_response::RpcSimulateTransactionResult,
 };
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::{
-    account::Account, instruction::Instruction, message::Message, pubkey::Pubkey,
-    signature::Signature, signer::signers::Signers, transaction::Transaction,
+    instruction::Instruction, message::Message, pubkey::Pubkey, signature::Signature,
+    signer::signers::Signers, transaction::Transaction,
 };
 use solana_transaction_status::UiTransactionEncoding;
 
@@ -23,7 +20,7 @@ pub async fn build_txn(
     signing_keypairs: &dyn Signers,
 ) -> Result<Transaction> {
     let blockhash = client.get_latest_blockhash().await?;
-    let message = Message::new_with_blockhash(&instructions, Some(fee_payer), &blockhash);
+    let message = Message::new_with_blockhash(instructions, Some(fee_payer), &blockhash);
     let mut transaction = Transaction::new_unsigned(message);
 
     transaction.try_partial_sign(signing_keypairs, blockhash)?;
@@ -54,7 +51,7 @@ pub async fn simulate_transaction(
     cfg: CommitmentConfig,
 ) -> Result<RpcSimulateTransactionResult> {
     let serialized = bincode::serialize(transaction)
-        .map_err(|e| (format!("Serialization failed: {e}")))
+        .map_err(|e| format!("Serialization failed: {e}"))
         .unwrap();
     let serialized_encoded = BASE64_STANDARD.encode(serialized);
     println!("{}", serialized_encoded);
@@ -109,33 +106,4 @@ pub async fn get_anchor_account<T: AccountDeserialize>(
     } else {
         Ok(None)
     }
-}
-
-pub async fn get_multiple_accounts(
-    client: &RpcClient,
-    pubkeys: &[Pubkey],
-) -> Result<Vec<Option<Account>>> {
-    Ok(client.get_multiple_accounts(pubkeys).await?)
-}
-
-pub async fn get_program_accounts_with_filters(
-    client: &RpcClient,
-    program: Pubkey,
-    filters: Option<Vec<RpcFilterType>>,
-) -> Result<Vec<(Pubkey, Account)>> {
-    let accounts = client
-        .get_program_accounts_with_config(
-            &program,
-            RpcProgramAccountsConfig {
-                filters,
-                account_config: RpcAccountInfoConfig {
-                    encoding: Some(UiAccountEncoding::Base64Zstd),
-                    ..RpcAccountInfoConfig::default()
-                },
-                with_context: Some(false),
-                sort_results: None,
-            },
-        )
-        .await?;
-    Ok(accounts)
 }

@@ -136,9 +136,7 @@ pub fn compute_swap_step(
         if is_base_input && swap_step.sqrt_price_next_x64 != sqrt_price_target_x64 {
             // we didn't reach the target, so take the remainder of the maximum input as fee
             // swap dust is granted as fee
-            u64::from(amount_remaining)
-                .checked_sub(swap_step.amount_in)
-                .unwrap()
+            amount_remaining.checked_sub(swap_step.amount_in).unwrap()
         } else {
             // take pip percentage as fee
             swap_step
@@ -182,14 +180,12 @@ fn calculate_amount_in_range(
             )
         };
 
-        if result.is_ok() {
-            return Ok(Some(result.unwrap()));
+        if let Ok(result) = result {
+            Ok(Some(result))
+        } else if result.err().unwrap() == ErrorCode::MaxTokenOverflow.into() {
+            Ok(None)
         } else {
-            if result.err().unwrap() == super::error::ErrorCode::MaxTokenOverflow.into() {
-                return Ok(None);
-            } else {
-                return Err(ErrorCode::SqrtPriceLimitOverflow.into());
-            }
+            Err(ErrorCode::SqrtPriceLimitOverflow.into())
         }
     } else {
         let result = if zero_for_one {
@@ -207,14 +203,12 @@ fn calculate_amount_in_range(
                 false,
             )
         };
-        if result.is_ok() {
-            return Ok(Some(result.unwrap()));
+        if let Ok(result) = result {
+            Ok(Some(result))
+        } else if result.err().unwrap() == ErrorCode::MaxTokenOverflow.into() {
+            Ok(None)
         } else {
-            if result.err().unwrap() == ErrorCode::MaxTokenOverflow.into() {
-                return Ok(None);
-            } else {
-                return Err(ErrorCode::SqrtPriceLimitOverflow.into());
-            }
+            Err(ErrorCode::SqrtPriceLimitOverflow.into())
         }
     }
 }

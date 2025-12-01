@@ -1,9 +1,8 @@
-use super::pool::PoolState;
 use crate::libraries::error::ErrorCode;
 use crate::libraries::{liquidity_math, tick_math};
 use crate::states::{REWARD_NUM, RewardInfo};
 use crate::util::*;
-use anchor_lang::{prelude::*, system_program};
+use anchor_lang::prelude::*;
 
 pub const TICK_ARRAY_SEED: &str = "tick_array";
 pub const TICK_ARRAY_SIZE_USIZE: usize = 60;
@@ -139,7 +138,7 @@ impl TickArrayState {
         Ok(())
     }
 
-    /// Get tick's offset in current tick array, tick must be include in tick array， otherwise throw an error
+    /// Get tick's offset in current tick array, tick must be included in tick array， otherwise throw an error
     fn get_tick_offset_in_array(self, tick_index: i32, tick_spacing: u16) -> Result<usize> {
         let start_tick_index = TickArrayState::get_array_start_index(tick_index, tick_spacing);
         require_eq!(
@@ -160,7 +159,7 @@ impl TickArrayState {
                 if self.ticks[i as usize].is_initialized() {
                     return Ok(self.ticks.get_mut(i as usize).unwrap());
                 }
-                i = i - 1;
+                i -= 1;
             }
         } else {
             let mut i = 0;
@@ -168,7 +167,7 @@ impl TickArrayState {
                 if self.ticks[i].is_initialized() {
                     return Ok(self.ticks.get_mut(i).unwrap());
                 }
-                i = i + 1;
+                i += 1;
             }
         }
         err!(ErrorCode::InvalidTickArray)
@@ -196,15 +195,15 @@ impl TickArrayState {
                 if self.ticks[offset_in_array as usize].is_initialized() {
                     return Ok(self.ticks.get_mut(offset_in_array as usize));
                 }
-                offset_in_array = offset_in_array - 1;
+                offset_in_array -= 1;
             }
         } else {
-            offset_in_array = offset_in_array + 1;
+            offset_in_array += 1;
             while offset_in_array < TICK_ARRAY_SIZE {
                 if self.ticks[offset_in_array as usize].is_initialized() {
                     return Ok(self.ticks.get_mut(offset_in_array as usize));
                 }
-                offset_in_array = offset_in_array + 1;
+                offset_in_array += 1;
             }
         }
         Ok(None)
@@ -225,7 +224,7 @@ impl TickArrayState {
         let ticks_in_array = TickArrayState::tick_count(tick_spacing);
         let mut start = tick_index / ticks_in_array;
         if tick_index < 0 && tick_index % ticks_in_array != 0 {
-            start = start - 1
+            start -= 1
         }
         start * ticks_in_array
     }
@@ -350,8 +349,8 @@ impl TickState {
             .checked_sub(self.fee_growth_outside_1_x64)
             .unwrap();
 
-        for i in 0..REWARD_NUM {
-            if !reward_infos[i].initialized() {
+        for (i, reward_info) in reward_infos.iter().enumerate().take(REWARD_NUM) {
+            if !reward_info.initialized() {
                 continue;
             }
 
@@ -379,7 +378,7 @@ impl TickState {
     /// Common checks for a valid tick input.
     /// A tick is valid if it lies within tick boundaries
     pub fn check_is_out_of_boundary(tick: i32) -> bool {
-        tick < tick_math::MIN_TICK || tick > tick_math::MAX_TICK
+        !(tick_math::MIN_TICK..=tick_math::MAX_TICK).contains(&tick)
     }
 }
 
@@ -471,15 +470,6 @@ pub fn get_reward_growths_inside(
             .reward_growth_global_x64
             .wrapping_sub(reward_growths_below)
             .wrapping_sub(reward_growths_above);
-        #[cfg(feature = "enable-log")]
-        msg!(
-            "get_reward_growths_inside,i:{},reward_growth_global:{},reward_growth_below:{},reward_growth_above:{}, reward_growth_inside:{}",
-            i,
-            identity(reward_infos[i].reward_growth_global_x64),
-            reward_growths_below,
-            reward_growths_above,
-            reward_growths_inside[i]
-        );
     }
 
     reward_growths_inside

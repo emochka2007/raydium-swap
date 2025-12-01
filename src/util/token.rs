@@ -1,25 +1,21 @@
 use super::get_recent_epoch;
-use crate::libraries::error::ErrorCode;
 use crate::states::*;
-use anchor_lang::{
-    prelude::*,
-    system_program::{CreateAccount, create_account},
-};
+use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token};
 use anchor_spl::token_2022::{
-    self, Token2022,
+    self,
     spl_token_2022::{
         self,
         extension::{
-            BaseStateWithExtensions, ExtensionType, StateWithExtensions, metadata_pointer,
+            BaseStateWithExtensions, ExtensionType, StateWithExtensions,
             transfer_fee::{MAX_FEE_BASIS_POINTS, TransferFeeConfig},
         },
     },
 };
-use anchor_spl::token_interface::{InitializeMint2, Mint, initialize_mint2};
+use anchor_spl::token_interface::Mint;
 use std::collections::HashSet;
 
-const MINT_WHITELIST: [&'static str; 4] = [
+const MINT_WHITELIST: [&str; 4] = [
     "HVbpJAQGNpkgBaYBZQBR1t7yFdvaYVp2vCQQfKKEN4tM",
     "Crn4x1Y2HUKko7ox2EZMT6N2t2ZyH7eKtwkBGVnhEq1g",
     "FrBfWJ4qE5sCzKm3k3JaAtqZcXUh4LvJygDeketsrsH4",
@@ -135,51 +131,9 @@ pub fn transfer_from_pool_vault_to_user<'info>(
     }
 }
 
-pub fn close_spl_account<'a, 'b, 'c, 'info>(
-    owner: &AccountInfo<'info>,
-    destination: &AccountInfo<'info>,
-    close_account: &AccountInfo<'info>,
-    token_program: &AccountInfo<'info>,
-    signers_seeds: &[&[&[u8]]],
-) -> Result<()> {
-    token_2022::close_account(CpiContext::new_with_signer(
-        token_program.to_account_info(),
-        token_2022::CloseAccount {
-            account: close_account.to_account_info(),
-            destination: destination.to_account_info(),
-            authority: owner.to_account_info(),
-        },
-        signers_seeds,
-    ))
-}
-
-pub fn burn<'a, 'b, 'c, 'info>(
-    owner: &Signer<'info>,
-    mint: &AccountInfo<'info>,
-    burn_account: &AccountInfo<'info>,
-    token_program: &AccountInfo<'info>,
-    signers_seeds: &[&[&[u8]]],
-    amount: u64,
-) -> Result<()> {
-    let mint_info = mint.to_account_info();
-    let token_program_info: AccountInfo<'_> = token_program.to_account_info();
-    token_2022::burn(
-        CpiContext::new_with_signer(
-            token_program_info,
-            token_2022::Burn {
-                mint: mint_info,
-                from: burn_account.to_account_info(),
-                authority: owner.to_account_info(),
-            },
-            signers_seeds,
-        ),
-        amount,
-    )
-}
-
 /// Calculate the fee for output amount
 pub fn get_transfer_inverse_fee(
-    mint_account: Box<InterfaceAccount<Mint>>,
+    mint_account: InterfaceAccount<Mint>,
     post_fee_amount: u64,
 ) -> Result<u64> {
     let mint_info = mint_account.to_account_info();
@@ -207,10 +161,7 @@ pub fn get_transfer_inverse_fee(
 }
 
 /// Calculate the fee for input amount
-pub fn get_transfer_fee(
-    mint_account: Box<InterfaceAccount<Mint>>,
-    pre_fee_amount: u64,
-) -> Result<u64> {
+pub fn get_transfer_fee(mint_account: InterfaceAccount<Mint>, pre_fee_amount: u64) -> Result<u64> {
     let mint_info = mint_account.to_account_info();
     if *mint_info.owner == Token::id() {
         return Ok(0);

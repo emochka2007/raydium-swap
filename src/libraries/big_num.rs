@@ -2,14 +2,18 @@
 ///! U128 is more efficient that u128
 ///! https://github.com/solana-labs/solana/issues/19549
 use uint::construct_uint;
+
+#[allow(unexpected_cfgs)]
 construct_uint! {
     pub struct U128(2);
 }
 
+#[allow(unexpected_cfgs)]
 construct_uint! {
     pub struct U256(4);
 }
 
+#[allow(unexpected_cfgs)]
 construct_uint! {
     pub struct U512(8);
 }
@@ -84,7 +88,7 @@ macro_rules! construct_bignum {
             fn try_from(u: $name) -> core::result::Result<i128, &'static str> {
                 let err_str = "integer overflow when casting to i128";
                 let i = u128::try_from(u).map_err(|_| err_str)?;
-                if i > i128::max_value() as u128 {
+                if i > i128::MAX as u128 {
                     Err(err_str)
                 } else {
                     Ok(i as i128)
@@ -116,7 +120,7 @@ macro_rules! construct_bignum {
 
         impl $name {
 			/// Maximum value.
-			pub const MAX: $name = $name([u64::max_value(); $n_words]);
+			pub const MAX: $name = $name([u64::MAX; $n_words]);
 
             /// Conversion to usize with overflow checking
 			///
@@ -126,7 +130,7 @@ macro_rules! construct_bignum {
 			#[inline]
 			pub fn as_usize(&self) -> usize {
 				let &$name(ref arr) = self;
-				if !self.fits_word() || arr[0] > usize::max_value() as u64 {
+				if !self.fits_word() || arr[0] > usize::MAX as u64 {
 					panic!("Integer overflow when casting to usize")
 				}
 				arr[0] as usize

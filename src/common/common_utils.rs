@@ -1,6 +1,5 @@
 use crate::common::{TEN_THOUSAND, TransferFeeInfo};
-use anchor_client::anchor_lang::err;
-use anchor_lang::{AccountDeserialize, error};
+use anchor_lang::AccountDeserialize;
 use anyhow::{Result, format_err};
 use solana_address::Address;
 use solana_client::rpc_client::RpcClient;
@@ -15,7 +14,6 @@ use spl_token_2022::{
     state::{Account, Mint},
 };
 use std::convert::TryFrom;
-use tracing::warn;
 
 pub fn amount_with_slippage(amount: u64, slippage_bps: u64, up_towards: bool) -> Result<u64> {
     let amount = amount as u128;
@@ -82,7 +80,7 @@ pub fn unpack_spl(token_data: &[u8]) -> Result<spl_token::state::Account> {
     Ok(spl_token::state::Account::unpack_from_slice(token_data)?)
 }
 
-pub fn unpack_spl_2022(token_data: &[u8]) -> Result<StateWithExtensions<Account>> {
+pub fn unpack_spl_2022(token_data: &[u8]) -> Result<StateWithExtensions<'_, Account>> {
     // Guard against accidentally passing a mint (82 bytes) or other
     // non‑token account data into the SPL 2022 `Account` unpacker,
     // which would otherwise panic inside the underlying library.
@@ -96,8 +94,8 @@ pub fn unpack_spl_2022(token_data: &[u8]) -> Result<StateWithExtensions<Account>
     Ok(StateWithExtensions::<Account>::unpack(token_data)?)
 }
 
-pub fn unpack_mint(token_data: &[u8]) -> Result<StateWithExtensions<Mint>> {
-    let mint = StateWithExtensions::<Mint>::unpack(&token_data)?;
+pub fn unpack_mint(token_data: &[u8]) -> Result<StateWithExtensions<'_, Mint>> {
+    let mint = StateWithExtensions::<Mint>::unpack(token_data)?;
     Ok(mint)
 }
 
@@ -177,7 +175,8 @@ pub fn get_transfer_inverse_fee<S: BaseState + SolanaProgramPack>(
     epoch: u64,
     post_fee_amount: u64,
 ) -> u64 {
-    let fee = if let Ok(transfer_fee_config) = account_state.get_extension::<TransferFeeConfig>() {
+    
+    if let Ok(transfer_fee_config) = account_state.get_extension::<TransferFeeConfig>() {
         let transfer_fee = transfer_fee_config.get_epoch_fee(epoch);
         if u16::from(transfer_fee.transfer_fee_basis_points) == MAX_FEE_BASIS_POINTS {
             u64::from(transfer_fee.maximum_fee)
@@ -188,8 +187,7 @@ pub fn get_transfer_inverse_fee<S: BaseState + SolanaProgramPack>(
         }
     } else {
         0
-    };
-    fee
+    }
 }
 
 /// Calculate the fee for input amount
@@ -198,14 +196,14 @@ pub fn get_transfer_fee<S: BaseState + SolanaProgramPack>(
     epoch: u64,
     pre_fee_amount: u64,
 ) -> u64 {
-    let fee = if let Ok(transfer_fee_config) = account_state.get_extension::<TransferFeeConfig>() {
+    
+    if let Ok(transfer_fee_config) = account_state.get_extension::<TransferFeeConfig>() {
         transfer_fee_config
             .calculate_epoch_fee(epoch, pre_fee_amount)
             .unwrap()
     } else {
         0
-    };
-    fee
+    }
 }
 
 // pub fn get_nft_accounts_by_owner_with_specified_program(

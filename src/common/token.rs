@@ -87,7 +87,7 @@ pub fn transfer_to(
             token_program.unwrap_or(&spl_token::id()),
             from,
             to,
-            &from_authority,
+            from_authority,
             &[],
             amount,
         )

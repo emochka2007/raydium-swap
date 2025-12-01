@@ -1,5 +1,3 @@
-use anchor_client::Cluster;
-use anyhow::Result;
 use solana_sdk::pubkey::Pubkey;
 use spl_token_2022::extension::{
     confidential_transfer::{ConfidentialTransferAccount, ConfidentialTransferMint},
@@ -13,7 +11,6 @@ use spl_token_2022::extension::{
     permanent_delegate::PermanentDelegate,
     transfer_fee::{TransferFeeAmount, TransferFeeConfig},
 };
-use std::{convert::TryInto, str::FromStr};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TokenInfo {

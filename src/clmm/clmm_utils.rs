@@ -1,21 +1,18 @@
 use crate::clmm::{
-    ClmmCreatePoolResult, ClmmLiquidityChangeResult, ClmmSwapChangeResult, RewardItem,
-    StepComputations, SwapState, price_to_sqrt_price_x64, tick_with_spacing,
+    ClmmSwapChangeResult,
+    StepComputations, SwapState, price_to_sqrt_price_x64,
 };
 use crate::common::{
-    TokenAccountState, amount_with_slippage, common_utils, deserialize_anchor_account,
-    get_pool_mints_inverse_fee, get_transfer_fee, rpc, unpack_mint, unpack_spl_2022, unpack_token,
+    TokenAccountState, amount_with_slippage, common_utils, deserialize_anchor_account, get_transfer_fee, rpc, unpack_mint, unpack_token,
 };
 use crate::libraries::{
-    MAX_SQRT_PRICE_X64, MAX_TICK, MIN_SQRT_PRICE_X64, MIN_TICK, add_delta, compute_swap_step,
-    get_delta_amounts_signed, get_liquidity_from_single_amount_0,
-    get_liquidity_from_single_amount_1, get_sqrt_price_at_tick, get_tick_at_sqrt_price,
+    MAX_SQRT_PRICE_X64, MAX_TICK, MIN_SQRT_PRICE_X64, MIN_TICK, add_delta, compute_swap_step, get_sqrt_price_at_tick, get_tick_at_sqrt_price,
 };
 use crate::states::{
     AmmConfig, PoolState, TICK_ARRAY_SEED, TickArrayBitmapExtension, TickArrayState, TickState,
 };
 use anchor_lang::solana_program::program_option::COption as AnchorCOption;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use arrayref::array_ref;
 use solana_address::Address;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -25,177 +22,6 @@ use std::{
     collections::VecDeque,
     ops::{DerefMut, Neg},
 };
-
-pub async fn create_pool_price(
-    rpc_client: &RpcClient,
-    mint0: Pubkey,
-    mint1: Pubkey,
-    price: f64,
-) -> Result<ClmmCreatePoolResult> {
-    let mut price = price;
-    let mut mint0 = mint0;
-    let mut mint1 = mint1;
-    if mint0 > mint1 {
-        std::mem::swap(&mut mint0, &mut mint1);
-        price = 1.0 / price;
-    }
-    println!("mint0:{}, mint1:{}, price:{}", mint0, mint1, price);
-    let load_pubkeys: Vec<Address> = vec![mint0, mint1]
-        .iter()
-        .map(|m| Address::from(m.to_bytes()))
-        .collect();
-    let rsps = rpc_client.get_multiple_accounts(&load_pubkeys).await?;
-
-    let mint0_token_program = rsps[0].as_ref().unwrap().owner.to_string();
-    let mint0_token_program = Pubkey::from_str_const(&mint0_token_program);
-    let mint1_token_program = rsps[1].as_ref().unwrap().owner.to_string();
-    let mint1_token_program = Pubkey::from_str_const(&mint1_token_program);
-
-    let mint0_info = unpack_mint(&rsps[0].as_ref().unwrap().data)?;
-    let mint1_info = unpack_mint(&rsps[1].as_ref().unwrap().data)?;
-    let sqrt_price_x64 =
-        price_to_sqrt_price_x64(price, mint0_info.base.decimals, mint1_info.base.decimals);
-    let tick = get_tick_at_sqrt_price(sqrt_price_x64)?;
-    Ok(ClmmCreatePoolResult {
-        mint0,
-        mint1,
-        mint0_token_program,
-        mint1_token_program,
-        price,
-        sqrt_price_x64,
-        tick,
-    })
-}
-
-pub async fn calculate_liquidity_change(
-    rpc_client: &RpcClient,
-    pool_id: Pubkey,
-    tick_lower_price: f64,
-    tick_upper_price: f64,
-    input_amount: u64,
-    slippage_bps: u64,
-    collect_reward: bool,
-    is_base_0: bool,
-) -> Result<ClmmLiquidityChangeResult> {
-    let pool_id = solana_address::Address::from(pool_id.to_bytes());
-    let pool = rpc::get_anchor_account::<PoolState>(rpc_client, &pool_id)
-        .await?
-        .ok_or(anyhow!("Error getting account for raydium_amm_v3"))?;
-
-    let pool_token_mint_0_addr = solana_address::Address::from(pool.token_mint_0.to_bytes());
-    let pool_token_mint_1_addr = solana_address::Address::from(pool.token_mint_1.to_bytes());
-
-    let mut load_pubkeys = vec![pool_token_mint_0_addr, pool_token_mint_1_addr];
-
-    let mut reward_items: Vec<RewardItem> = Vec::new();
-    if collect_reward {
-        // collect reward info while decrease liquidity
-        for item in pool.reward_infos.iter() {
-            if item.token_mint != Pubkey::default() {
-                reward_items.push(RewardItem {
-                    token_program: Pubkey::default(),
-                    reward_mint: item.token_mint,
-                    reward_vault: item.token_vault,
-                });
-                load_pubkeys.push(solana_address::Address::from(item.token_mint.to_bytes()));
-            }
-        }
-    }
-    let mut rsps = rpc_client.get_multiple_accounts(&load_pubkeys).await?;
-    let mint0_token_program = rsps.remove(0).unwrap().owner;
-    let mint1_token_program = rsps.remove(0).unwrap().owner;
-    for (item, rsp) in reward_items.iter_mut().zip(rsps.iter()) {
-        item.token_program = Pubkey::from(rsp.as_ref().unwrap().owner.to_bytes());
-    }
-
-    let tick_lower_price_x64 =
-        price_to_sqrt_price_x64(tick_lower_price, pool.mint_decimals_0, pool.mint_decimals_1);
-    let tick_upper_price_x64 =
-        price_to_sqrt_price_x64(tick_upper_price, pool.mint_decimals_0, pool.mint_decimals_1);
-    let tick_lower_index = tick_with_spacing(
-        get_tick_at_sqrt_price(tick_lower_price_x64)?,
-        pool.tick_spacing.into(),
-    );
-    let tick_upper_index = tick_with_spacing(
-        get_tick_at_sqrt_price(tick_upper_price_x64)?,
-        pool.tick_spacing.into(),
-    );
-    println!(
-        "tick_lower_index:{}, tick_upper_index:{}",
-        tick_lower_index, tick_upper_index
-    );
-    let tick_lower_price_x64 = get_sqrt_price_at_tick(tick_lower_index)?;
-    let tick_upper_price_x64 = get_sqrt_price_at_tick(tick_upper_index)?;
-    let liquidity = if is_base_0 {
-        get_liquidity_from_single_amount_0(
-            pool.sqrt_price_x64,
-            tick_lower_price_x64,
-            tick_upper_price_x64,
-            input_amount,
-        )
-    } else {
-        get_liquidity_from_single_amount_1(
-            pool.sqrt_price_x64,
-            tick_lower_price_x64,
-            tick_upper_price_x64,
-            input_amount,
-        )
-    };
-    let (amount_0, amount_1) = get_delta_amounts_signed(
-        pool.tick_current,
-        pool.sqrt_price_x64,
-        tick_lower_index,
-        tick_upper_index,
-        liquidity as i128,
-    )?;
-    println!(
-        "amount_0:{}, amount_1:{}, liquidity:{}",
-        amount_0, amount_1, liquidity
-    );
-    // calc with slippage
-    let amount_0_with_slippage = amount_with_slippage(amount_0, slippage_bps, true)?;
-    let amount_1_with_slippage = amount_with_slippage(amount_1, slippage_bps, true)?;
-    // calc with transfer_fee
-    let transfer_fee = get_pool_mints_inverse_fee(
-        &rpc_client,
-        mint0_token_program,
-        mint1_token_program,
-        amount_0_with_slippage,
-        amount_1_with_slippage,
-    )
-    .await?;
-    println!(
-        "transfer_fee_0:{}, transfer_fee_1:{}",
-        transfer_fee.0.transfer_fee, transfer_fee.1.transfer_fee
-    );
-    let amount_0_max = amount_0_with_slippage
-        .checked_add(transfer_fee.0.transfer_fee)
-        .unwrap();
-    let amount_1_max = amount_1_with_slippage
-        .checked_add(transfer_fee.1.transfer_fee)
-        .unwrap();
-
-    let tick_array_lower_start_index =
-        TickArrayState::get_array_start_index(tick_lower_index, pool.tick_spacing.into());
-    let tick_array_upper_start_index =
-        TickArrayState::get_array_start_index(tick_upper_index, pool.tick_spacing.into());
-    Ok(ClmmLiquidityChangeResult {
-        mint0: pool.token_mint_0,
-        mint1: pool.token_mint_1,
-        vault0: pool.token_vault_0,
-        vault1: pool.token_vault_1,
-        mint0_token_program,
-        mint1_token_program,
-        reward_items,
-        liquidity,
-        amount_0: amount_0_max,
-        amount_1: amount_1_max,
-        tick_lower_index,
-        tick_upper_index,
-        tick_array_lower_start_index,
-        tick_array_upper_start_index,
-    })
-}
 
 pub async fn calculate_swap_change(
     rpc_client: &RpcClient,
@@ -213,13 +39,11 @@ pub async fn calculate_swap_change(
         .await?
         .unwrap();
     // load mult account
-    let load_accounts: Vec<Address> = vec![
-        input_token,
+    let load_accounts: Vec<Address> = [input_token,
         pool_state.amm_config,
         pool_state.token_mint_0,
         pool_state.token_mint_1,
-        tickarray_bitmap_extension,
-    ]
+        tickarray_bitmap_extension]
     .iter()
     .map(|pubkey| Address::from(pubkey.to_bytes()))
     .collect();
@@ -559,17 +383,15 @@ fn swap_compute(
             .unwrap()
         {
             Box::new(*tick_state)
+        } else if !tick_match_current_tick_array {
+            tick_match_current_tick_array = true;
+            Box::new(
+                *tick_array_current
+                    .first_initialized_tick(zero_for_one)
+                    .unwrap(),
+            )
         } else {
-            if !tick_match_current_tick_array {
-                tick_match_current_tick_array = true;
-                Box::new(
-                    *tick_array_current
-                        .first_initialized_tick(zero_for_one)
-                        .unwrap(),
-                )
-            } else {
-                Box::new(TickState::default())
-            }
+            Box::new(TickState::default())
         };
         if !next_initialized_tick.is_initialized() {
             let current_vaild_tick_array_start_index = pool_state

@@ -1,9 +1,8 @@
-use std::convert::TryInto;
 pub const Q64: u128 = (u64::MAX as u128) + 1; // 2^64
 pub const RESOLUTION: u8 = 64;
 
 pub fn multipler(decimals: u8) -> f64 {
-    (10_i32).checked_pow(decimals.try_into().unwrap()).unwrap() as f64
+    (10_i32).checked_pow(decimals.into()).unwrap() as f64
 }
 pub fn price_to_x64(price: f64) -> u128 {
     (price * Q64 as f64) as u128

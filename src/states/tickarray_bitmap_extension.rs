@@ -1,7 +1,7 @@
 use crate::consts::CLMM;
 use crate::libraries::error::ErrorCode;
 use crate::libraries::{
-    big_num::U512,
+    U512,
     tick_array_bit_map::{
         TICK_ARRAY_BITMAP_SIZE, TickArryBitmap, get_bitmap_tick_boundary,
         max_tick_in_tickarray_bitmap,
@@ -120,7 +120,7 @@ impl TickArrayBitmapExtension {
         if tick_array_start_index < 0 {
             self.negative_tick_array_bitmap[offset] = tick_array_bitmap.bitxor(mask).0;
         } else {
-            self.positive_tick_array_bitmap[offset as usize] = tick_array_bitmap.bitxor(mask).0;
+            self.positive_tick_array_bitmap[offset] = tick_array_bitmap.bitxor(mask).0;
         }
         Ok(())
     }
@@ -173,7 +173,7 @@ impl TickArrayBitmapExtension {
             Self::tick_array_offset_in_bitmap(next_tick_array_start_index, tick_spacing);
         if zero_for_one {
             // tick from upper to lower
-            // find from highter bits to lower bits
+            // find from higher bits to lower bits
             let offset_bit_map = U512(tickarray_bitmap)
                 << (TICK_ARRAY_BITMAP_SIZE - 1 - tick_array_offset_in_bitmap);
 
@@ -183,13 +183,13 @@ impl TickArrayBitmapExtension {
                 Some(u16::try_from(offset_bit_map.leading_zeros()).unwrap())
             };
 
-            if next_bit.is_some() {
+            if let Some(next_bit) = next_bit {
                 let next_array_start_index = next_tick_array_start_index
-                    - i32::from(next_bit.unwrap()) * TickArrayState::tick_count(tick_spacing);
-                return (true, next_array_start_index);
+                    - i32::from(next_bit) * TickArrayState::tick_count(tick_spacing);
+                (true, next_array_start_index)
             } else {
                 // not found til to the end
-                return (false, bitmap_min_tick_boundary);
+                (false, bitmap_min_tick_boundary)
             }
         } else {
             // tick from lower to upper
@@ -201,16 +201,16 @@ impl TickArrayBitmapExtension {
             } else {
                 Some(u16::try_from(offset_bit_map.trailing_zeros()).unwrap())
             };
-            if next_bit.is_some() {
+            if let Some(next_bit) = next_bit {
                 let next_array_start_index = next_tick_array_start_index
-                    + i32::from(next_bit.unwrap()) * TickArrayState::tick_count(tick_spacing);
-                return (true, next_array_start_index);
+                    + i32::from(next_bit) * TickArrayState::tick_count(tick_spacing);
+                (true, next_array_start_index)
             } else {
                 // not found til to the end
-                return (
+                (
                     false,
                     bitmap_max_tick_boundary - TickArrayState::tick_count(tick_spacing),
-                );
+                )
             }
         }
     }

@@ -1,14 +1,14 @@
 use crate::amm::{AmmInstruction, SwapInstructionBaseIn};
 use crate::clmm::clmm_utils;
-use crate::common::create_ata_token_or_not;
 use crate::consts::{AMM_V4, CLMM, LIQUIDITY_FEES_DENOMINATOR, LIQUIDITY_FEES_NUMERATOR};
 use crate::interface::{
-    AmmPool, ClmmPoolInfosResponse, ClmmSinglePoolInfo, ClmmSwapParams, PoolInfosByType,
-    PoolInfosResponse, PoolKeys, PoolType, SinglePoolInfo, SinglePoolInfoByType,
+    AmmPool, ClmmPool, ClmmPoolInfosResponse, ClmmSinglePoolInfo, ClmmSwapParams, PoolInfosByType,
+    PoolKeys, PoolType,
 };
+use crate::states::POOL_TICK_ARRAY_BITMAP_SEED;
 use anchor_lang::Discriminator;
 use anchor_spl::memo::spl_memo;
-use anyhow::{Context, anyhow, format_err};
+use anyhow::{Context, anyhow};
 use borsh::{BorshDeserialize, BorshSerialize};
 use raydium_amm_v3::instruction;
 use reqwest::Client;
@@ -158,19 +158,6 @@ impl AmmSwapClient {
         query: Option<&[(&str, &str)]>,
     ) -> anyhow::Result<T> {
         let url = format!("{}{}", self.base_url, path.unwrap_or_default());
-        println!("{url}");
-        println!("{:?}", query);
-        let response = self
-            .reqwest_client
-            .get(&url)
-            .query(query.unwrap_or(&[]))
-            .send()
-            .await
-            .context("Raydium amm get failed")?
-            .error_for_status()
-            .context("Raydium non-200")?;
-        println!("{:?}", response.text().await);
-
         let response = self
             .reqwest_client
             .get(&url)
@@ -229,25 +216,11 @@ impl AmmSwapClient {
     }
 
     /// Fetch pool metadata (price, TVL, stats) by ID via HTTP API.
-    pub async fn fetch_pool_by_id(
-        &self,
-        id: &Pubkey,
-        pool_type: &PoolType,
-    ) -> anyhow::Result<SinglePoolInfoByType> {
+    pub async fn fetch_pool_by_id(&self, id: &Pubkey) -> anyhow::Result<ClmmSinglePoolInfo> {
         let id = id.to_string();
         let headers = ("ids", id.as_str());
-        match pool_type {
-            PoolType::Standard => {
-                let resp: SinglePoolInfo =
-                    self.get(Some("/pools/info/ids"), Some(&[headers])).await?;
-                Ok(SinglePoolInfoByType::Standard(resp))
-            }
-            PoolType::Concentrated => {
-                let resp: ClmmSinglePoolInfo =
-                    self.get(Some("/pools/info/ids"), Some(&[headers])).await?;
-                Ok(SinglePoolInfoByType::Concentrated(resp))
-            }
-        }
+        let resp: ClmmSinglePoolInfo = self.get(Some("/pools/info/ids"), Some(&[headers])).await?;
+        Ok(resp)
     }
 
     /// List pools for the given pair via HTTP API.
@@ -280,7 +253,7 @@ impl AmmSwapClient {
         ];
         match pool_type {
             PoolType::Standard => {
-                let resp: PoolInfosResponse =
+                let resp: ClmmPoolInfosResponse =
                     self.get(Some("/pools/info/mint"), Some(&headers)).await?;
                 Ok(PoolInfosByType::Standard(resp))
             }
@@ -303,7 +276,7 @@ impl AmmSwapClient {
     pub fn compute_amount_out(
         &self,
         rpc_pool_info: &RpcPoolInfo,
-        pool_info: &AmmPool,
+        pool_info: &ClmmPool,
         amount_in: u64,
         slippage: f64,
     ) -> anyhow::Result<ComputeAmountOutResult> {
@@ -519,7 +492,7 @@ impl AmmSwapClient {
         let base_in = !params.base_out;
         let tickarray_bitmap_extension = Pubkey::find_program_address(
             &[
-                raydium_amm_v3::states::POOL_TICK_ARRAY_BITMAP_SEED.as_bytes(),
+                POOL_TICK_ARRAY_BITMAP_SEED.as_bytes(),
                 params.pool_id.to_bytes().as_ref(),
             ],
             &Pubkey::from_str_const(CLMM),
@@ -531,7 +504,7 @@ impl AmmSwapClient {
 
         let clmm_pubkey = solana_pubkey::Pubkey::from_str_const(CLMM);
 
-        let user_output_token = params.user_output_token.clone();
+        let user_output_token = params.user_output_token;
 
         let result = clmm_utils::calculate_swap_change(
             &self.rpc_client,
@@ -548,27 +521,6 @@ impl AmmSwapClient {
 
         let mut instructions = Vec::new();
         let user_output_token = Pubkey::from(user_output_token.to_bytes());
-        // let user_output_token = if let Some(user_output_token) = user_output_token {
-        //     Pubkey::from(user_output_token.to_bytes())
-        // } else {
-        //     let pubkey_output_vault_mint = &Pubkey::from(result.output_vault_mint.to_bytes());
-        //     let pubkey_output_token_program = &Pubkey::from(result.output_token_program.to_bytes());
-        //
-        //     let create_user_output_token_instr = create_ata_token_or_not(
-        //         &self.owner.pubkey(),
-        //         pubkey_output_vault_mint,
-        //         &self.owner.pubkey(),
-        //         Some(pubkey_output_token_program),
-        //     );
-        //     instructions.extend(create_user_output_token_instr);
-        //
-        //     spl_associated_token_account::get_associated_token_address_with_program_id(
-        //         &self.owner.pubkey(),
-        //         pubkey_output_vault_mint,
-        //         pubkey_output_token_program,
-        //     )
-        // };
-
         let mut remaining_accounts = Vec::new();
         remaining_accounts.push(AccountMeta::new_readonly(
             Address::from(tickarray_bitmap_extension.to_bytes()),
@@ -624,7 +576,7 @@ impl AmmSwapClient {
         // Build Anchor-style instruction data for SwapV2:
         // discriminator + borsh-encoded fields.
         let mut data = Vec::with_capacity(8 + 8 + 8 + 16 + 1);
-        data.extend_from_slice(&instruction::SwapV2::DISCRIMINATOR);
+        data.extend_from_slice(instruction::SwapV2::DISCRIMINATOR);
         data.extend_from_slice(&amount.to_le_bytes());
         data.extend_from_slice(&other_amount_threshold.to_le_bytes());
         data.extend_from_slice(&sqrt_price_limit_x64.unwrap_or(0u128).to_le_bytes());

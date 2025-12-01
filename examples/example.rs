@@ -1,9 +1,9 @@
 use anyhow::anyhow;
 use raydium_amm_swap::amm::client::AmmSwapClient;
+use raydium_amm_swap::consts::SOL_MINT;
 use raydium_amm_swap::helpers::from_bytes_to_key_pair;
 use raydium_amm_swap::interface::{
-    AmmPool, ClmmPool, ClmmSwapParams, PoolInfosByType, PoolKeys, PoolType, SinglePoolInfo,
-    SinglePoolInfoByType,
+    AmmPool, ClmmPool, ClmmSwapParams, PoolInfosByType, PoolKeys, PoolType, SinglePoolInfoByType,
 };
 use solana_address::Address;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -14,15 +14,13 @@ use std::env;
 use std::str::FromStr;
 use tracing::info;
 
-// todo Add CLMM support
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().unwrap();
-    // 5 monad
-    let amount_in = 5_0000_0000;
+    let amount_in = 1_000_000;
     let slippage = 0.01;
     let url = env::var("RPC_URL").unwrap();
-    let mint_a = env::var("MINT_1").unwrap();
+    let mint_a = env::var("MINT_1").unwrap_or(SOL_MINT.to_string());
     let mint_b = env::var("MINT_2").unwrap();
     let rpc_client = RpcClient::new(url);
     let owner = env::var("KEYPAIR").expect("KEYPAIR env is not presented");
@@ -32,15 +30,14 @@ async fn main() {
     let amm_swap_client = AmmSwapClient::new(rpc_client, keypair);
 
     // Choose which kind of pool to query.
-    let pool_type = PoolType::Concentrated;
+    let pool_type = PoolType::Standard;
 
     let all_mint_pools = amm_swap_client
-        .fetch_pool_info(&mint_a, &mint_b, &pool_type, None, None, None, None)
+        .fetch_pool_info(&mint_a, &mint_b, &pool_type, Some(2), None, None, None)
         .await
         .unwrap();
 
-    println!("{:?}", all_mint_pools);
-
+    // First pool_id
     let pool_id_str = match &all_mint_pools {
         PoolInfosByType::Standard(pools) => &pools.data.data.first().unwrap().id,
         PoolInfosByType::Concentrated(pools) => &pools.data.data.first().unwrap().id,
@@ -48,14 +45,11 @@ async fn main() {
 
     let pool_id = Pubkey::from_str(pool_id_str).unwrap();
 
-    let pool_info = amm_swap_client
-        .fetch_pool_by_id(&pool_id, &pool_type)
-        .await
-        .unwrap();
+    let pool_info = amm_swap_client.fetch_pool_by_id(&pool_id).await.unwrap();
 
     // For now, compute_amount_out & swap are only wired for standard AMM v4.
-    match (pool_type, pool_info) {
-        (PoolType::Standard, SinglePoolInfoByType::Standard(info)) => {
+    match pool_type {
+        PoolType::Standard => {
             let pool_keys: PoolKeys<AmmPool> = amm_swap_client
                 .fetch_pools_keys_by_id(&pool_id)
                 .await
@@ -66,7 +60,7 @@ async fn main() {
                 .await
                 .map_err(|e| anyhow!("Error fetching rpc pool info {e:?}"))
                 .unwrap();
-            let pool = info.data.get(0).unwrap();
+            let pool = pool_info.data.get(0).unwrap();
             let compute = amm_swap_client
                 .compute_amount_out(&rpc_data, pool, amount_in, slippage)
                 .unwrap();
@@ -74,12 +68,14 @@ async fn main() {
             let key = pool_keys.data.get(0).unwrap();
             info!("Standard pool key: {:?}", key);
 
-            let _sig = amm_swap_client
+            let signature = amm_swap_client
                 .swap(key, &mint_a, &mint_b, amount_in, compute.amount_out)
                 .await
                 .unwrap();
+            info!("{signature}");
         }
-        (PoolType::Concentrated, SinglePoolInfoByType::Concentrated(info)) => {
+
+        PoolType::Concentrated => {
             let pool_keys: PoolKeys<ClmmPool> = amm_swap_client
                 .fetch_pools_keys_by_id(&pool_id)
                 .await
@@ -101,17 +97,16 @@ async fn main() {
                 user_output_token: ata_b,
                 amount_specified: amount_in,
                 limit_price: None,
-                // if false -> amount_in
+                // if false -> amount is amount_in
                 base_out: false,
                 slippage_bps: 100,
             };
 
-            let _sig = amm_swap_client.swap_clmm(keys).await.unwrap();
-
-            info!(
-                "CLMM single‑pool info fetched successfully; CLMM math not yet implemented in this example."
-            );
+            let sig = amm_swap_client.swap_clmm(keys).await.unwrap();
+            info!("{sig}");
         }
-        _ => {}
+        _ => {
+            unreachable!();
+        }
     }
 }

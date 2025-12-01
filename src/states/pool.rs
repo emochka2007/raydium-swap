@@ -1,4 +1,4 @@
-use crate::consts::{ADMIN, CLMM};
+use crate::consts::CLMM;
 use crate::libraries::error::ErrorCode;
 use crate::libraries::{
     big_num::{U128, U256, U1024},
@@ -19,19 +19,6 @@ pub const POOL_REWARD_VAULT_SEED: &str = "pool_reward_vault";
 pub const POOL_TICK_ARRAY_BITMAP_SEED: &str = "pool_tick_array_bitmap_extension";
 // Number of rewards Token
 pub const REWARD_NUM: usize = 3;
-
-#[cfg(feature = "paramset")]
-pub mod reward_period_limit {
-    pub const MIN_REWARD_PERIOD: u64 = 1 * 60 * 60;
-    pub const MAX_REWARD_PERIOD: u64 = 2 * 60 * 60;
-    pub const INCREASE_EMISSIONES_PERIOD: u64 = 30 * 60;
-}
-#[cfg(not(feature = "paramset"))]
-pub mod reward_period_limit {
-    pub const MIN_REWARD_PERIOD: u64 = 7 * 24 * 60 * 60;
-    pub const MAX_REWARD_PERIOD: u64 = 90 * 24 * 60 * 60;
-    pub const INCREASE_EMISSIONES_PERIOD: u64 = 72 * 60 * 60;
-}
 
 pub enum PoolStatusBitIndex {
     OpenPositionOrIncreaseLiquidity,
@@ -166,7 +153,7 @@ impl PoolState {
 
     pub fn seeds(&self) -> [&[u8]; 5] {
         [
-            &POOL_SEED.as_bytes(),
+            POOL_SEED.as_bytes(),
             self.amm_config.as_ref(),
             self.token_mint_0.as_ref(),
             self.token_mint_1.as_ref(),
@@ -234,88 +221,13 @@ impl PoolState {
         Ok(())
     }
 
-    pub fn initialize_reward(
-        &mut self,
-        open_time: u64,
-        end_time: u64,
-        reward_per_second_x64: u128,
-        token_mint: &Pubkey,
-        token_vault: &Pubkey,
-        authority: &Pubkey,
-        operation_state: &OperationState,
-    ) -> Result<()> {
-        let reward_infos = self.reward_infos;
-        let lowest_index = match reward_infos.iter().position(|r| !r.initialized()) {
-            Some(lowest_index) => lowest_index,
-            None => return Err(ErrorCode::FullRewardInfo.into()),
-        };
-
-        if lowest_index >= REWARD_NUM {
-            return Err(ErrorCode::FullRewardInfo.into());
-        }
-
-        // one of first two reward token must be a vault token and the last reward token must be controled by the admin
-        let reward_mints: Vec<Pubkey> = reward_infos
-            .into_iter()
-            .map(|item| item.token_mint)
-            .collect();
-        // check init token_mint is not already in use
-        require!(
-            !reward_mints.contains(token_mint),
-            ErrorCode::RewardTokenAlreadyInUse
-        );
-        let whitelist_mints = operation_state.whitelist_mints.to_vec();
-        // The current init token is the penult.
-        if lowest_index == REWARD_NUM - 2 {
-            // If token_mint_0 or token_mint_1 is not contains in the initialized rewards token,
-            // the current init reward token mint must be token_mint_0 or token_mint_1
-            if !reward_mints.contains(&self.token_mint_0)
-                && !reward_mints.contains(&self.token_mint_1)
-            {
-                require!(
-                    *token_mint == self.token_mint_0
-                        || *token_mint == self.token_mint_1
-                        || whitelist_mints.contains(token_mint),
-                    ErrorCode::ExceptPoolVaultMint
-                );
-            }
-        } else if lowest_index == REWARD_NUM - 1 {
-            // the last reward token must be controled by the admin
-            require!(
-                *authority == Pubkey::from_str_const(ADMIN)
-                    || operation_state.validate_operation_owner(*authority),
-                ErrorCode::NotApproved
-            );
-        }
-
-        // self.reward_infos[lowest_index].reward_state = RewardState::Initialized as u8;
-        self.reward_infos[lowest_index].last_update_time = open_time;
-        self.reward_infos[lowest_index].open_time = open_time;
-        self.reward_infos[lowest_index].end_time = end_time;
-        self.reward_infos[lowest_index].emissions_per_second_x64 = reward_per_second_x64;
-        self.reward_infos[lowest_index].token_mint = *token_mint;
-        self.reward_infos[lowest_index].token_vault = *token_vault;
-        self.reward_infos[lowest_index].authority = *authority;
-        #[cfg(feature = "enable-log")]
-        msg!(
-            "reward_index:{}, reward_infos:{:?}",
-            lowest_index,
-            self.reward_infos[lowest_index],
-        );
-        self.recent_epoch = get_recent_epoch()?;
-        Ok(())
-    }
-
     // Calculates the next global reward growth variables based on the given timestamp.
     // The provided timestamp must be greater than or equal to the last updated timestamp.
     pub fn update_reward_infos(&mut self, curr_timestamp: u64) -> Result<[RewardInfo; REWARD_NUM]> {
-        #[cfg(feature = "enable-log")]
-        msg!("current block timestamp:{}", curr_timestamp);
-
         let mut next_reward_infos = self.reward_infos;
 
-        for i in 0..REWARD_NUM {
-            let reward_info = &mut next_reward_infos[i];
+        for reward_info in next_reward_infos.iter_mut().take(REWARD_NUM) {
+            // let reward_info = &mut next_reward_infos[i];
             if !reward_info.initialized() {
                 continue;
             }
@@ -354,18 +266,6 @@ impl PoolState {
                             .as_u64(),
                     )
                     .unwrap();
-                #[cfg(feature = "enable-log")]
-                msg!(
-                    "reward_index:{},latest_update_timestamp:{},reward_info.reward_last_update_time:{},time_delta:{},reward_emission_per_second_x64:{},reward_growth_delta:{},reward_info.reward_growth_global_x64:{}, reward_info.reward_claim:{}",
-                    i,
-                    latest_update_timestamp,
-                    identity(reward_info.last_update_time),
-                    time_delta,
-                    identity(reward_info.emissions_per_second_x64),
-                    reward_growth_delta,
-                    identity(reward_info.reward_growth_global_x64),
-                    identity(reward_info.reward_claimed)
-                );
             }
             reward_info.last_update_time = latest_update_timestamp;
             // update reward state
@@ -373,19 +273,11 @@ impl PoolState {
                 && latest_update_timestamp < reward_info.end_time
             {
                 reward_info.reward_state = RewardState::Opening as u8;
-            } else if latest_update_timestamp == next_reward_infos[i].end_time {
-                next_reward_infos[i].reward_state = RewardState::Ended as u8;
+            } else if latest_update_timestamp == reward_info.end_time {
+                reward_info.reward_state = RewardState::Ended as u8;
             }
         }
         self.reward_infos = next_reward_infos;
-        #[cfg(feature = "enable-log")]
-        msg!(
-            "update pool reward info, reward_0_total_emissioned:{}, reward_1_total_emissioned:{}, reward_2_total_emissioned:{}, pool.liquidity:{}",
-            identity(self.reward_infos[0].reward_total_emissioned),
-            identity(self.reward_infos[1].reward_total_emissioned),
-            identity(self.reward_infos[2].reward_total_emissioned),
-            identity(self.liquidity)
-        );
         self.recent_epoch = get_recent_epoch()?;
         Ok(next_reward_infos)
     }
@@ -424,7 +316,7 @@ impl PoolState {
         let tick_array_offset_in_bitmap = self.get_tick_array_offset(tick_array_start_index)?;
 
         let tick_array_bitmap = U1024(self.tick_array_bitmap);
-        let mask = U1024::one() << tick_array_offset_in_bitmap.try_into().unwrap();
+        let mask = U1024::one() << tick_array_offset_in_bitmap;
         self.tick_array_bitmap = tick_array_bitmap.bitxor(mask).0;
         Ok(())
     }
@@ -466,7 +358,7 @@ impl PoolState {
                 check_current_tick_array_is_initialized(
                     U1024(self.tick_array_bitmap),
                     self.tick_current,
-                    self.tick_spacing.into(),
+                    self.tick_spacing,
                 )?
             };
         if is_initialized {
@@ -481,7 +373,7 @@ impl PoolState {
             next_start_index.is_some(),
             ErrorCode::InsufficientLiquidityForDirection
         );
-        return Ok((false, next_start_index.unwrap()));
+        Ok((false, next_start_index.unwrap()))
     }
 
     pub fn next_initialized_tick_array_start_index(
@@ -522,9 +414,7 @@ impl PoolState {
             }
             last_tick_array_start_index = start_index;
 
-            if last_tick_array_start_index < tick_math::MIN_TICK
-                || last_tick_array_start_index > tick_math::MAX_TICK
-            {
+            if !(tick_math::MIN_TICK..=tick_math::MAX_TICK).contains(&last_tick_array_start_index) {
                 return Ok(None);
             }
         }
@@ -535,18 +425,18 @@ impl PoolState {
     }
 
     pub fn set_status_by_bit(&mut self, bit: PoolStatusBitIndex, flag: PoolStatusBitFlag) {
-        let s = u8::from(1) << (bit as u8);
+        let s = 1 << (bit as u8);
         if flag == PoolStatusBitFlag::Disable {
             self.status = self.status.bitor(s);
         } else {
-            let m = u8::from(255).bitxor(s);
+            let m = 255.bitxor(s);
             self.status = self.status.bitand(m);
         }
     }
 
     /// Get status by bit, if it is `noraml` status, return true
     pub fn get_status_by_bit(&self, bit: PoolStatusBitIndex) -> bool {
-        let status = u8::from(1) << (bit as u8);
+        let status = 1 << (bit as u8);
         self.status.bitand(status) == 0
     }
 
@@ -576,7 +466,7 @@ impl PoolState {
             max_tick_boundary =
                 TickArrayState::get_array_start_index(tick_math::MAX_TICK, self.tick_spacing);
             // find the next tick array start index
-            max_tick_boundary = max_tick_boundary + TickArrayState::tick_count(self.tick_spacing);
+            max_tick_boundary += TickArrayState::tick_count(self.tick_spacing);
         }
         if min_tick_boundary < tick_math::MIN_TICK {
             min_tick_boundary =
@@ -653,148 +543,3 @@ impl RewardInfo {
         reward_growths
     }
 }
-
-/// Emitted when a pool is created and initialized with a starting price
-///
-#[event]
-#[cfg_attr(feature = "client", derive(Debug))]
-pub struct PoolCreatedEvent {
-    /// The first token of the pool by address sort order
-    pub token_mint_0: Pubkey,
-
-    /// The second token of the pool by address sort order
-    pub token_mint_1: Pubkey,
-
-    /// The minimum number of ticks between initialized ticks
-    pub tick_spacing: u16,
-
-    /// The address of the created pool
-    pub pool_state: Pubkey,
-
-    /// The initial sqrt price of the pool, as a Q64.64
-    pub sqrt_price_x64: u128,
-
-    /// The initial tick of the pool, i.e. log base 1.0001 of the starting price of the pool
-    pub tick: i32,
-
-    /// Vault of token_0
-    pub token_vault_0: Pubkey,
-    /// Vault of token_1
-    pub token_vault_1: Pubkey,
-}
-
-/// Emitted when the collected protocol fees are withdrawn by the factory owner
-#[event]
-#[cfg_attr(feature = "client", derive(Debug))]
-pub struct CollectProtocolFeeEvent {
-    /// The pool whose protocol fee is collected
-    pub pool_state: Pubkey,
-
-    /// The address that receives the collected token_0 protocol fees
-    pub recipient_token_account_0: Pubkey,
-
-    /// The address that receives the collected token_1 protocol fees
-    pub recipient_token_account_1: Pubkey,
-
-    /// The amount of token_0 protocol fees that is withdrawn
-    pub amount_0: u64,
-
-    /// The amount of token_0 protocol fees that is withdrawn
-    pub amount_1: u64,
-}
-
-/// Emitted by when a swap is performed for a pool
-#[event]
-#[cfg_attr(feature = "client", derive(Debug))]
-pub struct SwapEvent {
-    /// The pool for which token_0 and token_1 were swapped
-    pub pool_state: Pubkey,
-
-    /// The address that initiated the swap call, and that received the callback
-    pub sender: Pubkey,
-
-    /// The payer token account in zero for one swaps, or the recipient token account
-    /// in one for zero swaps
-    pub token_account_0: Pubkey,
-
-    /// The payer token account in one for zero swaps, or the recipient token account
-    /// in zero for one swaps
-    pub token_account_1: Pubkey,
-
-    /// The real delta amount of the token_0 of the pool or user
-    pub amount_0: u64,
-
-    /// The transfer fee charged by the withheld_amount of the token_0
-    pub transfer_fee_0: u64,
-
-    /// The real delta of the token_1 of the pool or user
-    pub amount_1: u64,
-
-    /// The transfer fee charged by the withheld_amount of the token_1
-    pub transfer_fee_1: u64,
-
-    /// if true, amount_0 is negtive and amount_1 is positive
-    pub zero_for_one: bool,
-
-    /// The sqrt(price) of the pool after the swap, as a Q64.64
-    pub sqrt_price_x64: u128,
-
-    /// The liquidity of the pool after the swap
-    pub liquidity: u128,
-
-    /// The log base 1.0001 of price of the pool after the swap
-    pub tick: i32,
-}
-
-/// Emitted pool liquidity change when increase and decrease liquidity
-#[event]
-#[cfg_attr(feature = "client", derive(Debug))]
-pub struct LiquidityChangeEvent {
-    /// The pool for swap
-    pub pool_state: Pubkey,
-
-    /// The tick of the pool
-    pub tick: i32,
-
-    /// The tick lower of position
-    pub tick_lower: i32,
-
-    /// The tick lower of position
-    pub tick_upper: i32,
-
-    /// The liquidity of the pool before liquidity change
-    pub liquidity_before: u128,
-
-    /// The liquidity of the pool after liquidity change
-    pub liquidity_after: u128,
-}
-
-// /// Emitted when price move in a swap step
-// #[event]
-// #[cfg_attr(feature = "client", derive(Debug))]
-// pub struct PriceChangeEvent {
-//     /// The pool for swap
-//     #[index]
-//     pub pool_state: Pubkey,
-
-//     /// The tick of the pool before price change
-//     pub tick_before: i32,
-
-//     /// The tick of the pool after tprice change
-//     pub tick_after: i32,
-
-//     /// The sqrt(price) of the pool before price change, as a Q64.64
-//     pub sqrt_price_x64_before: u128,
-
-//     /// The sqrt(price) of the pool after price change, as a Q64.64
-//     pub sqrt_price_x64_after: u128,
-
-//     /// The liquidity of the pool before price change
-//     pub liquidity_before: u128,
-
-//     /// The liquidity of the pool after price change
-//     pub liquidity_after: u128,
-
-//     /// The direction of swap
-//     pub zero_for_one: bool,
-// }
