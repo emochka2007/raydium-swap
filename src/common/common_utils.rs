@@ -175,7 +175,6 @@ pub fn get_transfer_inverse_fee<S: BaseState + SolanaProgramPack>(
     epoch: u64,
     post_fee_amount: u64,
 ) -> u64 {
-    
     if let Ok(transfer_fee_config) = account_state.get_extension::<TransferFeeConfig>() {
         let transfer_fee = transfer_fee_config.get_epoch_fee(epoch);
         if u16::from(transfer_fee.transfer_fee_basis_points) == MAX_FEE_BASIS_POINTS {
@@ -196,7 +195,6 @@ pub fn get_transfer_fee<S: BaseState + SolanaProgramPack>(
     epoch: u64,
     pre_fee_amount: u64,
 ) -> u64 {
-    
     if let Ok(transfer_fee_config) = account_state.get_extension::<TransferFeeConfig>() {
         transfer_fee_config
             .calculate_epoch_fee(epoch, pre_fee_amount)
@@ -205,133 +203,3 @@ pub fn get_transfer_fee<S: BaseState + SolanaProgramPack>(
         0
     }
 }
-
-// pub fn get_nft_accounts_by_owner_with_specified_program(
-//     client: &RpcClient,
-//     owner: &Pubkey,
-//     token_program: Pubkey,
-// ) -> Vec<TokenInfo> {
-//     let all_tokens = client
-//         .get_token_accounts_by_owner(owner, TokenAccountsFilter::ProgramId(spl_token::id()))
-//         .unwrap();
-//     let mut nft_accounts_info = Vec::new();
-//     for keyed_account in all_tokens {
-//         if let UiAccountData::Json(parsed_account) = keyed_account.account.data {
-//             if parsed_account.program == "spl-token" || parsed_account.program == "spl-token-2022" {
-//                 if let Ok(TokenAccountType::Account(ui_token_account)) =
-//                     serde_json::from_value(parsed_account.parsed)
-//                 {
-//                     let _frozen = ui_token_account.state == UiAccountState::Frozen;
-//
-//                     let token = ui_token_account
-//                         .mint
-//                         .parse::<Pubkey>()
-//                         .unwrap_or_else(|err| panic!("Invalid mint: {}", err));
-//                     let token_account = keyed_account
-//                         .pubkey
-//                         .parse::<Pubkey>()
-//                         .unwrap_or_else(|err| panic!("Invalid token account: {}", err));
-//                     let token_amount = ui_token_account
-//                         .token_amount
-//                         .amount
-//                         .parse::<u64>()
-//                         .unwrap_or_else(|err| panic!("Invalid token amount: {}", err));
-//
-//                     let _close_authority = ui_token_account.close_authority.map_or(*owner, |s| {
-//                         s.parse::<Pubkey>()
-//                             .unwrap_or_else(|err| panic!("Invalid close authority: {}", err))
-//                     });
-//
-//                     if ui_token_account.token_amount.decimals == 0 && token_amount == 1 {
-//                         nft_accounts_info.push(TokenInfo {
-//                             key: token_account,
-//                             mint: token,
-//                             program: token_program,
-//                             amount: token_amount,
-//                             decimals: ui_token_account.token_amount.decimals,
-//                         });
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//     nft_accounts_info
-// }
-//
-// pub fn get_account_extensions<'data, S: BaseState>(
-//     account_state: &StateWithExtensions<'data, S>,
-// ) -> Vec<ExtensionStruct> {
-//     let mut extensions: Vec<ExtensionStruct> = Vec::new();
-//     let extension_types = account_state.get_extension_types().unwrap();
-//     println!("extension_types:{:?}", extension_types);
-//     for extension_type in extension_types {
-//         match extension_type {
-//             ExtensionType::ConfidentialTransferAccount => {
-//                 let extension = account_state
-//                     .get_extension::<ConfidentialTransferAccount>()
-//                     .unwrap();
-//                 extensions.push(ExtensionStruct::ConfidentialTransferAccount(*extension));
-//             }
-//             ExtensionType::ConfidentialTransferMint => {
-//                 let extension = account_state
-//                     .get_extension::<ConfidentialTransferMint>()
-//                     .unwrap();
-//                 extensions.push(ExtensionStruct::ConfidentialTransferMint(*extension));
-//             }
-//             ExtensionType::CpiGuard => {
-//                 let extension = account_state.get_extension::<CpiGuard>().unwrap();
-//                 extensions.push(ExtensionStruct::CpiGuard(*extension));
-//             }
-//             ExtensionType::DefaultAccountState => {
-//                 let extension = account_state
-//                     .get_extension::<DefaultAccountState>()
-//                     .unwrap();
-//                 extensions.push(ExtensionStruct::DefaultAccountState(*extension));
-//             }
-//             ExtensionType::ImmutableOwner => {
-//                 let extension = account_state.get_extension::<ImmutableOwner>().unwrap();
-//                 extensions.push(ExtensionStruct::ImmutableOwner(*extension));
-//             }
-//             ExtensionType::InterestBearingConfig => {
-//                 let extension = account_state
-//                     .get_extension::<InterestBearingConfig>()
-//                     .unwrap();
-//                 extensions.push(ExtensionStruct::InterestBearingConfig(*extension));
-//             }
-//             ExtensionType::MemoTransfer => {
-//                 let extension = account_state.get_extension::<MemoTransfer>().unwrap();
-//                 extensions.push(ExtensionStruct::MemoTransfer(*extension));
-//             }
-//             ExtensionType::MintCloseAuthority => {
-//                 let extension = account_state.get_extension::<MintCloseAuthority>().unwrap();
-//                 extensions.push(ExtensionStruct::MintCloseAuthority(*extension));
-//             }
-//             ExtensionType::NonTransferable => {
-//                 let extension = account_state.get_extension::<NonTransferable>().unwrap();
-//                 extensions.push(ExtensionStruct::NonTransferable(*extension));
-//             }
-//             ExtensionType::NonTransferableAccount => {
-//                 let extension = account_state
-//                     .get_extension::<NonTransferableAccount>()
-//                     .unwrap();
-//                 extensions.push(ExtensionStruct::NonTransferableAccount(*extension));
-//             }
-//             ExtensionType::PermanentDelegate => {
-//                 let extension = account_state.get_extension::<PermanentDelegate>().unwrap();
-//                 extensions.push(ExtensionStruct::PermanentDelegate(*extension));
-//             }
-//             ExtensionType::TransferFeeConfig => {
-//                 let extension = account_state.get_extension::<TransferFeeConfig>().unwrap();
-//                 extensions.push(ExtensionStruct::TransferFeeConfig(*extension));
-//             }
-//             ExtensionType::TransferFeeAmount => {
-//                 let extension = account_state.get_extension::<TransferFeeAmount>().unwrap();
-//                 extensions.push(ExtensionStruct::TransferFeeAmount(*extension));
-//             }
-//             _ => {
-//                 println!("unkonwn extension:{:#?}", extension_type);
-//             }
-//         }
-//     }
-//     extensions
-// }

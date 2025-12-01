@@ -58,62 +58,6 @@ pub enum SinglePoolInfoByType {
     Concentrated(ClmmSinglePoolInfo),
 }
 
-// /// Detailed information for a single pool.
-// #[derive(Deserialize, Debug)]
-// #[serde(rename_all = "camelCase")]
-// pub struct Pool {
-//     /// Type of pool (e.g., “standard”).
-//     pub r#type: String,
-//     /// On‑chain program ID.
-//     pub program_id: String,
-//     /// Pool account address.
-//     pub id: String,
-//     /// Token A mint information.
-//     pub mint_a: Mint,
-//     /// Token B mint information.
-//     pub mint_b: Mint,
-//     /// Current pool price (token B per token A).
-//     pub price: f64,
-//     /// Token A reserve amount.
-//     pub mint_amount_a: f64,
-//     /// Token B reserve amount.
-//     pub mint_amount_b: f64,
-//     /// Fee rate applied on swaps.
-//     pub fee_rate: f64,
-//     /// Pool creation timestamp.
-//     pub open_time: String,
-//     /// Total value locked.
-//     pub tvl: f64,
-//     /// 24‑hour stats.
-//     pub day: PoolPeriod,
-//     /// 7‑day stats.
-//     pub week: PoolPeriod,
-//     /// 30‑day stats.
-//     pub month: PoolPeriod,
-//     /// Optional pool subtype tags.
-//     pub pool_type: Option<Vec<String>>,
-//     /// Default rewards info.
-//     pub reward_default_pool_infos: Option<String>,
-//     /// List of per‑reward distributions.
-//     pub reward_default_infos: Vec<RewardDefault>,
-//     /// Counts of associated farms.
-//     pub farm_upcoming_count: u32,
-//     pub farm_ongoing_count: u32,
-//     pub farm_finished_count: u32,
-//     /// On‑chain market ID for concentrated liquidity.
-//     pub market_id: Option<String>,
-//     /// LP token mint.
-//     pub lp_mint: Mint,
-//     /// Price of LP token.
-//     pub lp_price: f64,
-//     /// Amount of LP tokens in circulation.
-//     pub lp_amount: f64,
-//     /// Percent of LP tokens burned.
-//     pub burn_percent: f64,
-//     /// Whether migration is required.
-//     pub launch_migrate_pool: bool,
-// }
-
 /// Period‑specific stats for a pool.
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]

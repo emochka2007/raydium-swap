@@ -3,7 +3,7 @@ use raydium_amm_swap::amm::client::AmmSwapClient;
 use raydium_amm_swap::consts::SOL_MINT;
 use raydium_amm_swap::helpers::from_bytes_to_key_pair;
 use raydium_amm_swap::interface::{
-    AmmPool, ClmmPool, ClmmSwapParams, PoolInfosByType, PoolKeys, PoolType, SinglePoolInfoByType,
+    AmmPool, ClmmPool, ClmmSwapParams, PoolInfosByType, PoolKeys, PoolType,
 };
 use solana_address::Address;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -17,7 +17,7 @@ use tracing::info;
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().unwrap();
-    let amount_in = 1_000_000;
+    let amount_in = 500_000;
     let slippage = 0.01;
     let url = env::var("RPC_URL").unwrap();
     let mint_a = env::var("MINT_1").unwrap_or(SOL_MINT.to_string());
@@ -30,7 +30,7 @@ async fn main() {
     let amm_swap_client = AmmSwapClient::new(rpc_client, keypair);
 
     // Choose which kind of pool to query.
-    let pool_type = PoolType::Standard;
+    let pool_type = PoolType::Concentrated;
 
     let all_mint_pools = amm_swap_client
         .fetch_pool_info(&mint_a, &mint_b, &pool_type, Some(2), None, None, None)
@@ -104,9 +104,6 @@ async fn main() {
 
             let sig = amm_swap_client.swap_clmm(keys).await.unwrap();
             info!("{sig}");
-        }
-        _ => {
-            unreachable!();
         }
     }
 }

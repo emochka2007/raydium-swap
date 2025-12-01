@@ -1,7 +1,7 @@
 use crate::libraries::error::ErrorCode;
 use crate::libraries::{liquidity_math, tick_math};
 use crate::states::{REWARD_NUM, RewardInfo};
-use crate::util::*;
+use crate::util::get_recent_epoch;
 use anchor_lang::prelude::*;
 
 pub const TICK_ARRAY_SEED: &str = "tick_array";

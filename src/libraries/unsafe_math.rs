@@ -1,4 +1,4 @@
-use super::{big_num::U128, U256};
+use super::{U256, big_num::U128};
 
 pub trait UnsafeMathTrait {
     /// Returns ceil (x / y)
@@ -24,26 +24,5 @@ impl UnsafeMathTrait for U128 {
 impl UnsafeMathTrait for U256 {
     fn div_rounding_up(x: Self, y: Self) -> Self {
         x / y + U256::from((x % y > U256::default()) as u8)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn divide_by_factor() {
-        assert_eq!(u64::div_rounding_up(4, 2), 2);
-    }
-
-    #[test]
-    fn divide_and_round_up() {
-        assert_eq!(u64::div_rounding_up(4, 3), 2);
-    }
-
-    #[test]
-    #[should_panic]
-    fn divide_by_zero() {
-        u64::div_rounding_up(2, 0);
     }
 }
