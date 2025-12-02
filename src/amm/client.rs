@@ -125,7 +125,6 @@ pub struct RpcPoolInfo {
     pub base_reserve: u64,
 }
 
-#[cfg_attr(feature = "derive", derive(Debug))]
 /// High‑level client for performing swaps between two mints.
 pub struct AmmSwapClient {
     reqwest_client: Client,
