@@ -116,6 +116,7 @@ struct AccountLayout {
     close_authority: Pubkey,
 }
 
+#[cfg_attr(feature = "derive", derive(Debug))]
 /// On‑chain reserves for a pool.
 pub struct RpcPoolInfo {
     /// Amount of quote token in vault.
@@ -124,14 +125,13 @@ pub struct RpcPoolInfo {
     pub base_reserve: u64,
 }
 
+#[cfg_attr(feature = "derive", derive(Debug))]
 /// High‑level client for performing swaps between two mints.
 pub struct AmmSwapClient {
     reqwest_client: Client,
     base_url: String,
     owner: Keypair,
     rpc_client: RpcClient,
-    // mint_1: Pubkey,
-    // mint_2: Pubkey,
 }
 
 impl AmmSwapClient {

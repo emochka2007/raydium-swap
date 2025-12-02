@@ -244,6 +244,7 @@ pub struct ClmmPool {
     pub launch_migrate_pool: Option<bool>,
 }
 
+#[cfg_attr(feature = "derive", derive(Debug))]
 pub struct ClmmSwapParams {
     pub pool_id: solana_pubkey::Pubkey,
     /// The token of user want to swap from.
