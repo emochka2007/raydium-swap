@@ -30,7 +30,7 @@ async fn main() {
     let amm_swap_client = AmmSwapClient::new(rpc_client, keypair);
 
     // Choose which kind of pool to query.
-    let pool_type = PoolType::Standard;
+    let pool_type = PoolType::Concentrated;
 
     let all_mint_pools = amm_swap_client
         .fetch_pool_info(&mint_a, &mint_b, &pool_type, Some(2), None, None, None)

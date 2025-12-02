@@ -1,5 +1,8 @@
 //! Common constants used across the AMM swap client.
 
+pub fn swap_v2_discriminator() -> [u8; 8] {
+    [43, 4, 237, 11, 26, 201, 30, 98]
+}
 /// The Solana native token mint (wrapped SOL).
 pub const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
 

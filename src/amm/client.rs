@@ -1,17 +1,17 @@
 use crate::amm::{AmmInstruction, SwapInstructionBaseIn};
 use crate::clmm::clmm_utils;
-use crate::consts::{AMM_V4, CLMM, LIQUIDITY_FEES_DENOMINATOR, LIQUIDITY_FEES_NUMERATOR};
+use crate::consts::{
+    AMM_V4, CLMM, LIQUIDITY_FEES_DENOMINATOR, LIQUIDITY_FEES_NUMERATOR, swap_v2_discriminator,
+};
 use crate::interface::{
     AmmPool, ClmmPool, ClmmPoolInfosResponse, ClmmSinglePoolInfo, ClmmSwapParams, PoolInfosByType,
     PoolKeys, PoolType,
 };
 use crate::states::POOL_TICK_ARRAY_BITMAP_SEED;
-use anchor_lang::Discriminator;
 use anchor_lang::prelude::{Rent, SolanaSysvar};
 use anchor_spl::memo::spl_memo;
 use anyhow::{Context, anyhow};
 use borsh::{BorshDeserialize, BorshSerialize};
-use raydium_amm_v3::instruction;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use solana_address::Address;
@@ -570,7 +570,7 @@ impl AmmSwapClient {
         // Build Anchor-style instruction data for SwapV2:
         // discriminator + borsh-encoded fields.
         let mut data = Vec::with_capacity(8 + 8 + 8 + 16 + 1);
-        data.extend_from_slice(instruction::SwapV2::DISCRIMINATOR);
+        data.extend_from_slice(&swap_v2_discriminator());
         data.extend_from_slice(&amount.to_le_bytes());
         data.extend_from_slice(&other_amount_threshold.to_le_bytes());
         data.extend_from_slice(&sqrt_price_limit_x64.unwrap_or(0u128).to_le_bytes());
