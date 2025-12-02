@@ -30,7 +30,7 @@ async fn main() {
     let amm_swap_client = AmmSwapClient::new(rpc_client, keypair);
 
     // Choose which kind of pool to query.
-    let pool_type = PoolType::Concentrated;
+    let pool_type = PoolType::Standard;
 
     let all_mint_pools = amm_swap_client
         .fetch_pool_info(&mint_a, &mint_b, &pool_type, Some(2), None, None, None)
@@ -48,6 +48,8 @@ async fn main() {
     let pool_info = amm_swap_client.fetch_pool_by_id(&pool_id).await.unwrap();
 
     // For now, compute_amount_out & swap are only wired for standard AMM v4.
+    let mint_a = Address::from_str_const(&mint_a);
+    let mint_b = Address::from_str_const(&mint_b);
     match pool_type {
         PoolType::Standard => {
             let pool_keys: PoolKeys<AmmPool> = amm_swap_client
@@ -69,7 +71,14 @@ async fn main() {
             info!("Standard pool key: {:?}", key);
 
             let signature = amm_swap_client
-                .swap(key, &mint_a, &mint_b, amount_in, compute.amount_out)
+                .swap_amm(
+                    key,
+                    &mint_a,
+                    &mint_b,
+                    amount_in,
+                    compute.min_amount_out,
+                    None,
+                )
                 .await
                 .unwrap();
             info!("{signature}");
@@ -83,12 +92,10 @@ async fn main() {
             let key = pool_keys.data.get(0).unwrap();
             info!("Standard pool key: {:?}", key);
             let ata_a = solana_pubkey::Pubkey::from(
-                get_associated_token_address(&owner_pubkey, &Address::from_str_const(&mint_a))
-                    .to_bytes(),
+                get_associated_token_address(&owner_pubkey, &mint_a).to_bytes(),
             );
             let ata_b = solana_pubkey::Pubkey::from(
-                get_associated_token_address(&owner_pubkey, &Address::from_str_const(&mint_b))
-                    .to_bytes(),
+                get_associated_token_address(&owner_pubkey, &mint_b).to_bytes(),
             );
             println!("ata_a {}", ata_a.to_string());
             let keys = ClmmSwapParams {

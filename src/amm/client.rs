@@ -330,10 +330,9 @@ impl AmmSwapClient {
 
     async fn get_or_create_token_program(
         &self,
-        mint: Pubkey,
+        mint: &Pubkey,
         lamports_fee: Option<u64>,
     ) -> anyhow::Result<Pubkey> {
-        let rent = Rent::get()?;
         let associated_token_account =
             spl_associated_token_account::get_associated_token_address(&self.owner.pubkey(), &mint);
         let balance = self
@@ -353,25 +352,33 @@ impl AmmSwapClient {
                     "Error fetching balance Address {:?}, e {:?}",
                     associated_token_account, e
                 );
-                let instructions = vec![
+                let mut instructions = vec![
                     spl_associated_token_account::instruction::create_associated_token_account(
                         &self.owner.pubkey(),
                         &self.owner.pubkey(),
                         &mint,
+                        // Could be a potential bug with the spl_token2022 ata
                         &spl_token::id(),
                     ),
-                    // Amount is hardcoded based on network fee
-                    transfer(
+                ];
+
+                // For the native SOL mint, optionally wrap lamports into wSOL by
+                // transferring lamports and calling `sync_native`. For arbitrary SPL
+                // mints we only create the associated token account.
+                if *mint == spl_token::native_mint::id() {
+                    let rent = Rent::get()?;
+                    let amount_to_wrap = lamports_fee
+                        .unwrap_or(rent.minimum_balance(spl_token::state::Account::LEN));
+                    instructions.push(transfer(
                         &self.owner.pubkey(),
                         &associated_token_account,
-                        lamports_fee
-                            .unwrap_or(rent.minimum_balance(spl_token::state::Account::LEN)),
-                    ),
-                    spl_token::instruction::sync_native(
+                        amount_to_wrap,
+                    ));
+                    instructions.push(spl_token::instruction::sync_native(
                         &spl_token::id(),
                         &associated_token_account,
-                    )?,
-                ];
+                    )?);
+                }
 
                 let recent_blockhash: solana_sdk::hash::Hash =
                     self.rpc_client.get_latest_blockhash().await?;
@@ -386,52 +393,22 @@ impl AmmSwapClient {
                     .send_and_confirm_transaction_with_spinner(&transaction)
                     .await?;
 
-                info!("SOL wrapped {:?}", sig);
+                if *mint == spl_token::native_mint::id() {
+                    info!("SOL wrapped {:?}", sig);
+                } else {
+                    info!("Created associated token account {:?}", sig);
+                }
             }
         }
 
         Ok(associated_token_account)
     }
 
-    /// Swap coin or pc from pool, base amount_in with a slippage of minimum_amount_out
-    ///
-    ///   0. `[]` Spl Token program id
-    ///   1. `[writable]` AMM Account
-    ///   2. `[]` $authority derived from `create_program_address(&[AUTHORITY_AMM, &[nonce]])`.
-    ///   3. `[writable]` AMM open orders Account
-    ///   4. `[writable]` (optional)AMM target orders Account, no longer used in the contract, recommended no need to add this Account.
-    ///   5. `[writable]` AMM coin vault Account to swap FROM or To.
-    ///   6. `[writable]` AMM pc vault Account to swap FROM or To.
-    ///   7. `[]` Market program id
-    ///   8. `[writable]` Market Account. Market program is the owner.
-    ///   9. `[writable]` Market bids Account
-    ///   10. `[writable]` Market asks Account
-    ///   11. `[writable]` Market event queue Account
-    ///   12. `[writable]` Market coin vault Account
-    ///   13. `[writable]` Market pc vault Account
-    ///   14. '[]` Market vault signer Account
-    ///   15. `[writable]` User source token Account.
-    ///   16. `[writable]` User destination token Account.
-    ///   17. `[signer]` User wallet Account
-    pub async fn swap(
+    pub async fn swap_amm(
         &self,
         pool_keys: &AmmPool,
-        mint_a: &str,
-        mint_b: &str,
-        amount_in: u64,
-        amount_out: u64, // out.amount_out means amount 'without' slippage
-    ) -> anyhow::Result<Signature> {
-        let mint_a = Pubkey::try_from(mint_a)?;
-        let mint_b = Pubkey::try_from(mint_b)?;
-        self.swap_amm(pool_keys, mint_a, mint_b, amount_in, amount_out, None)
-            .await
-    }
-
-    async fn swap_amm(
-        &self,
-        pool_keys: &AmmPool,
-        mint_a: Address,
-        mint_b: Address,
+        mint_a: &Address,
+        mint_b: &Address,
         amount_in: u64,
         amount_out: u64, // out.amount_out means amount 'without' slippage
         create_program_fee: Option<u64>,

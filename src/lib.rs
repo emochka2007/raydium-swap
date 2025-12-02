@@ -3,7 +3,7 @@
 //! This crate provides:
 //! - Retrieval of on‑chain and off‑chain pool data (`fetch_pool_info`, `fetch_pool_by_id`, etc.)
 //! - Computation of swap quotes with fee and slippage handling (`compute_amount_out`).
-//! - Execution of swaps against a given pool (`swap`).
+//! - Execution of swaps against a given pool (`swap_amm`, `swap_clmm`).
 //!
 //! # Examples
 //!
@@ -32,7 +32,7 @@
 //!     let amm_swap_client = AmmSwapClient::new(rpc_client, keypair);
 //!
 //!     //! Choose which kind of pool to query.
-//!     let pool_type = PoolType::Concentrated;
+//!     let pool_type = PoolType::Standard;
 //!
 //!     let all_mint_pools = amm_swap_client
 //!         .fetch_pool_info(&mint_a, &mint_b, &pool_type, Some(2), None, None, None)
@@ -49,7 +49,6 @@
 //!
 //!     let pool_info = amm_swap_client.fetch_pool_by_id(&pool_id).await.unwrap();
 //!
-//!     //! For now, compute_amount_out & swap are only wired for standard AMM v4.
 //!     match pool_type {
 //!         PoolType::Standard => {
 //!             let pool_keys: PoolKeys<AmmPool> = amm_swap_client
@@ -67,11 +66,21 @@
 //!                 .compute_amount_out(&rpc_data, pool, amount_in, slippage)
 //!                 .unwrap();
 //!
+//!             let mint_a_addr = Address::from_str_const(&mint_a);
+//!             let mint_b_addr = Address::from_str_const(&mint_b);
+//!
 //!             let key = pool_keys.data.get(0).unwrap();
 //!             info!("Standard pool key: {:?}", key);
 //!
 //!             let signature = amm_swap_client
-//!                 .swap(key, &mint_a, &mint_b, amount_in, compute.amount_out)
+//!                 .swap_amm(
+//!                     key,
+//!                     &mint_a_addr,
+//!                     &mint_b_addr,
+//!                     amount_in,
+//!                     compute.min_amount_out,
+//!                     None,
+//!                 )
 //!                 .await
 //!                 .unwrap();
 //!             info!("{signature}");
