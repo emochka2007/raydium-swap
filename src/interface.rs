@@ -15,18 +15,6 @@ pub struct PoolInfosResponse {
     pub data: ManyPoolsInfo,
 }
 
-/// Combined response type for standard vs. concentrated pools.
-///
-/// This is returned by `AmmSwapClient::fetch_pool_info` and allows callers to
-/// match on the concrete shape at compile time based on `PoolType`.
-#[derive(Debug)]
-pub enum PoolInfosByType {
-    /// Standard AMM v4 pool response.
-    Standard(ClmmPoolInfosResponse),
-    /// Concentrated (CLMM) pool response.
-    Concentrated(ClmmPoolInfosResponse),
-}
-
 /// Metadata and list of pools.
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]

@@ -2,9 +2,7 @@ use anyhow::anyhow;
 use raydium_amm_swap::amm::client::AmmSwapClient;
 use raydium_amm_swap::consts::SOL_MINT;
 use raydium_amm_swap::helpers::from_bytes_to_key_pair;
-use raydium_amm_swap::interface::{
-    AmmPool, ClmmPool, ClmmSwapParams, PoolInfosByType, PoolKeys, PoolType,
-};
+use raydium_amm_swap::interface::{AmmPool, ClmmPool, ClmmSwapParams, PoolKeys, PoolType};
 use solana_address::Address;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
@@ -38,10 +36,7 @@ async fn main() {
         .unwrap();
 
     // First pool_id
-    let pool_id_str = match &all_mint_pools {
-        PoolInfosByType::Standard(pools) => &pools.data.data.first().unwrap().id,
-        PoolInfosByType::Concentrated(pools) => &pools.data.data.first().unwrap().id,
-    };
+    let pool_id_str = &all_mint_pools.data.data.first().unwrap().id;
 
     let pool_id = Pubkey::from_str(pool_id_str).unwrap();
 

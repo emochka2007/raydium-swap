@@ -4,8 +4,8 @@ use crate::consts::{
     AMM_V4, CLMM, LIQUIDITY_FEES_DENOMINATOR, LIQUIDITY_FEES_NUMERATOR, swap_v2_discriminator,
 };
 use crate::interface::{
-    AmmPool, ClmmPool, ClmmPoolInfosResponse, ClmmSinglePoolInfo, ClmmSwapParams, PoolInfosByType,
-    PoolKeys, PoolType,
+    AmmPool, ClmmPool, ClmmPoolInfosResponse, ClmmSinglePoolInfo, ClmmSwapParams, PoolKeys,
+    PoolType,
 };
 use crate::states::POOL_TICK_ARRAY_BITMAP_SEED;
 use anchor_lang::prelude::{Rent, SolanaSysvar};
@@ -238,7 +238,7 @@ impl AmmSwapClient {
         page: Option<u32>,
         pool_sort_field: Option<&str>,
         sort_type: Option<&str>,
-    ) -> anyhow::Result<PoolInfosByType> {
+    ) -> anyhow::Result<ClmmPoolInfosResponse> {
         let page_size_str = page_size.unwrap_or(100).to_string();
         let page_str = page.unwrap_or(1).to_string();
         let pool_type_str = pool_type.to_string();
@@ -253,18 +253,9 @@ impl AmmSwapClient {
             ("pageSize", page_size_str.as_str()),
             ("page", page_str.as_str()),
         ];
-        match pool_type {
-            PoolType::Standard => {
-                let resp: ClmmPoolInfosResponse =
-                    self.get(Some("/pools/info/mint"), Some(&headers)).await?;
-                Ok(PoolInfosByType::Standard(resp))
-            }
-            PoolType::Concentrated => {
-                let resp: ClmmPoolInfosResponse =
-                    self.get(Some("/pools/info/mint"), Some(&headers)).await?;
-                Ok(PoolInfosByType::Concentrated(resp))
-            }
-        }
+        let resp: ClmmPoolInfosResponse =
+            self.get(Some("/pools/info/mint"), Some(&headers)).await?;
+        Ok(resp)
     }
 
     /// Compute a swap quote (amount out, fee, slippage).

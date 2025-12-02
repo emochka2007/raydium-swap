@@ -40,10 +40,13 @@
 //!         .unwrap();
 //!
 //!     //! First pool_id
-//!     let pool_id_str = match &all_mint_pools {
-//!         PoolInfosByType::Standard(pools) => &pools.data.data.first().unwrap().id,
-//!         PoolInfosByType::Concentrated(pools) => &pools.data.data.first().unwrap().id,
-//!     };
+//!         let all_mint_pools = amm_swap_client
+//!         .fetch_pool_info(&mint_a, &mint_b, &pool_type, Some(2), None, None, None)
+//!         .await
+//!         .unwrap();
+//!
+//!     // First pool_id
+//!     let pool_id_str = &all_mint_pools.data.data.first().unwrap().id;
 //!
 //!     let pool_id = Pubkey::from_str(pool_id_str).unwrap();
 //!
