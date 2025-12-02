@@ -19,16 +19,24 @@ pub fn amount_with_slippage(amount: u64, slippage_bps: u64, up_towards: bool) ->
     let slippage_bps = slippage_bps as u128;
     let amount_with_slippage = if up_towards {
         amount
-            .checked_mul(slippage_bps.checked_add(TEN_THOUSAND).unwrap())
-            .unwrap()
+            .checked_mul(
+                slippage_bps
+                    .checked_add(TEN_THOUSAND)
+                    .ok_or(anyhow!("Error in amount_with_slippage calculation"))?,
+            )
+            .ok_or(anyhow!("Error in amount_with_slippage calculation"))?
             .checked_div(TEN_THOUSAND)
-            .unwrap()
+            .ok_or(anyhow!("Error in amount_with_slippage calculation"))?
     } else {
         amount
-            .checked_mul(TEN_THOUSAND.checked_sub(slippage_bps).unwrap())
-            .unwrap()
+            .checked_mul(
+                TEN_THOUSAND
+                    .checked_sub(slippage_bps)
+                    .ok_or(anyhow!("Error in amount_with_slippage calculation"))?,
+            )
+            .ok_or(anyhow!("Error in amount_with_slippage calculation"))?
             .checked_div(TEN_THOUSAND)
-            .unwrap()
+            .ok_or(anyhow!("Error in amount_with_slippage calculation"))?
     };
     u64::try_from(amount_with_slippage)
         .map_err(|_| format_err!("failed to read keypair from {}", amount_with_slippage))
@@ -155,12 +163,12 @@ pub fn get_transfer_fee<S: BaseState + SolanaProgramPack>(
     account_state: &StateWithExtensions<S>,
     epoch: u64,
     pre_fee_amount: u64,
-) -> u64 {
+) -> anyhow::Result<u64> {
     if let Ok(transfer_fee_config) = account_state.get_extension::<TransferFeeConfig>() {
         transfer_fee_config
             .calculate_epoch_fee(epoch, pre_fee_amount)
-            .unwrap()
+            .ok_or(anyhow!("Error transfer_fee_config.calculate_epoch_fee"))
     } else {
-        0
+        Ok(0)
     }
 }

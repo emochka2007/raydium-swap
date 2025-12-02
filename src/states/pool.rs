@@ -1,10 +1,7 @@
-use crate::consts::CLMM;
 use crate::libraries::error::ErrorCode;
 use crate::libraries::{
-    big_num::{U128, U256, U1024},
-    check_current_tick_array_is_initialized, fixed_point_64,
-    full_math::MulDiv,
-    tick_array_bit_map, tick_math,
+    big_num::U1024, check_current_tick_array_is_initialized, tick_array_bit_map,
+    tick_math,
 };
 use crate::states::*;
 use anchor_lang::prelude::*;
@@ -162,10 +159,6 @@ impl PoolState {
         ]
     }
 
-    pub fn key(&self) -> Pubkey {
-        Pubkey::create_program_address(&self.seeds(), &Pubkey::from_str_const(CLMM)).unwrap()
-    }
-
     pub fn initialize(
         &mut self,
         bump: u8,
@@ -222,67 +215,6 @@ impl PoolState {
         Ok(())
     }
 
-    // Calculates the next global reward growth variables based on the given timestamp.
-    // The provided timestamp must be greater than or equal to the last updated timestamp.
-    pub fn update_reward_infos(&mut self, curr_timestamp: u64) -> Result<[RewardInfo; REWARD_NUM]> {
-        let mut next_reward_infos = self.reward_infos;
-
-        for reward_info in next_reward_infos.iter_mut().take(REWARD_NUM) {
-            // let reward_info = &mut next_reward_infos[i];
-            if !reward_info.initialized() {
-                continue;
-            }
-            if curr_timestamp <= reward_info.open_time {
-                continue;
-            }
-            let latest_update_timestamp = curr_timestamp.min(reward_info.end_time);
-
-            if self.liquidity != 0 {
-                require_gte!(latest_update_timestamp, reward_info.last_update_time);
-                let time_delta = latest_update_timestamp
-                    .checked_sub(reward_info.last_update_time)
-                    .unwrap();
-
-                let reward_growth_delta = U256::from(time_delta)
-                    .mul_div_floor(
-                        U256::from(reward_info.emissions_per_second_x64),
-                        U256::from(self.liquidity),
-                    )
-                    .unwrap();
-
-                reward_info.reward_growth_global_x64 = reward_info
-                    .reward_growth_global_x64
-                    .checked_add(reward_growth_delta.as_u128())
-                    .unwrap();
-
-                reward_info.reward_total_emissioned = reward_info
-                    .reward_total_emissioned
-                    .checked_add(
-                        U128::from(time_delta)
-                            .mul_div_ceil(
-                                U128::from(reward_info.emissions_per_second_x64),
-                                U128::from(fixed_point_64::Q64),
-                            )
-                            .unwrap()
-                            .as_u64(),
-                    )
-                    .unwrap();
-            }
-            reward_info.last_update_time = latest_update_timestamp;
-            // update reward state
-            if latest_update_timestamp >= reward_info.open_time
-                && latest_update_timestamp < reward_info.end_time
-            {
-                reward_info.reward_state = RewardState::Opening as u8;
-            } else if latest_update_timestamp == reward_info.end_time {
-                reward_info.reward_state = RewardState::Ended as u8;
-            }
-        }
-        self.reward_infos = next_reward_infos;
-        self.recent_epoch = get_recent_epoch()?;
-        Ok(next_reward_infos)
-    }
-
     pub fn get_tick_array_offset(&self, tick_array_start_index: i32) -> Result<usize> {
         require!(
             TickArrayState::check_is_valid_start_index(tick_array_start_index, self.tick_spacing),
@@ -302,7 +234,7 @@ impl PoolState {
         let (is_initialized, start_index) =
             if self.is_overflow_default_tickarray_bitmap(vec![self.tick_current]) {
                 tickarray_bitmap_extension
-                    .unwrap()
+                    .ok_or(anyhow!("tickarray_bitmap_extension cannot be None"))?
                     .check_tick_array_is_initialized(
                         TickArrayState::get_array_start_index(self.tick_current, self.tick_spacing),
                         self.tick_spacing,
@@ -322,10 +254,10 @@ impl PoolState {
             TickArrayState::get_array_start_index(self.tick_current, self.tick_spacing),
             zero_for_one,
         )?;
-        if next_start_index.is_none() {
-            return Err(anyhow!(ErrorCode::InsufficientLiquidityForDirection));
-        }
-        Ok((false, next_start_index.unwrap()))
+        Ok((
+            false,
+            next_start_index.ok_or(anyhow!(ErrorCode::InsufficientLiquidityForDirection))?,
+        ))
     }
 
     pub fn next_initialized_tick_array_start_index(
@@ -355,7 +287,7 @@ impl PoolState {
             }
 
             let (is_found, start_index) = tickarray_bitmap_extension
-                .unwrap()
+                .ok_or(anyhow!("tickarray_bitmap_extension cannot be None"))?
                 .next_initialized_tick_array_from_one_bitmap(
                     last_tick_array_start_index,
                     self.tick_spacing,

@@ -12,6 +12,7 @@ use anchor_spl::token_2022::{
     },
 };
 use anchor_spl::token_interface::Mint;
+use anyhow::anyhow;
 use raydium_amm_v3::util::get_recent_epoch;
 use std::collections::HashSet;
 
@@ -22,9 +23,9 @@ const MINT_WHITELIST: [&str; 4] = [
     "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo",
 ];
 
-pub fn invoke_memo_instruction<'info>(
+pub fn invoke_memo_instruction(
     memo_msg: &[u8],
-    memo_program: AccountInfo<'info>,
+    memo_program: AccountInfo,
 ) -> solana_program::entrypoint::ProgramResult {
     // NOTE: This helper is not used by the
     // client library and depends on Solana
@@ -135,7 +136,7 @@ pub fn transfer_from_pool_vault_to_user<'info>(
 pub fn get_transfer_inverse_fee(
     mint_account: InterfaceAccount<Mint>,
     post_fee_amount: u64,
-) -> Result<u64> {
+) -> anyhow::Result<u64> {
     let mint_info = mint_account.to_account_info();
     if *mint_info.owner == Token::id() {
         return Ok(0);
@@ -152,7 +153,7 @@ pub fn get_transfer_inverse_fee(
         } else {
             transfer_fee_config
                 .calculate_inverse_epoch_fee(epoch, post_fee_amount)
-                .unwrap()
+                .ok_or(anyhow!("calculate_inverse_epoch_fee is None"))?
         }
     } else {
         0
@@ -161,7 +162,10 @@ pub fn get_transfer_inverse_fee(
 }
 
 /// Calculate the fee for input amount
-pub fn get_transfer_fee(mint_account: InterfaceAccount<Mint>, pre_fee_amount: u64) -> Result<u64> {
+pub fn get_transfer_fee(
+    mint_account: InterfaceAccount<Mint>,
+    pre_fee_amount: u64,
+) -> anyhow::Result<u64> {
     let mint_info = mint_account.to_account_info();
     if *mint_info.owner == Token::id() {
         return Ok(0);
@@ -172,7 +176,7 @@ pub fn get_transfer_fee(mint_account: InterfaceAccount<Mint>, pre_fee_amount: u6
     let fee = if let Ok(transfer_fee_config) = mint.get_extension::<TransferFeeConfig>() {
         transfer_fee_config
             .calculate_epoch_fee(get_recent_epoch()?, pre_fee_amount)
-            .unwrap()
+            .ok_or(anyhow!("Calculate epoch fee is None in get_transfer_fee"))?
     } else {
         0
     };

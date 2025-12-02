@@ -80,18 +80,15 @@ pub fn transfer_to(
     from_authority: &Pubkey,
     token_program: Option<&Pubkey>,
     amount: u64,
-) -> Vec<Instruction> {
-    vec![
-        spl_token::instruction::transfer(
-            token_program.unwrap_or(&spl_token::id()),
-            from,
-            to,
-            from_authority,
-            &[],
-            amount,
-        )
-        .unwrap(),
-    ]
+) -> anyhow::Result<Vec<Instruction>> {
+    Ok(vec![spl_token::instruction::transfer(
+        token_program.unwrap_or(&spl_token::id()),
+        from,
+        to,
+        from_authority,
+        &[],
+        amount,
+    )?])
 }
 
 pub fn close_spl_account(

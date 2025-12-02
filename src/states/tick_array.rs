@@ -1,8 +1,8 @@
 use crate::libraries::error::ErrorCode;
-use crate::libraries::{liquidity_math, tick_math};
-use crate::states::{REWARD_NUM, RewardInfo};
-use crate::util::get_recent_epoch;
+use crate::libraries::tick_math;
+use crate::states::REWARD_NUM;
 use anchor_lang::prelude::*;
+use anyhow::anyhow;
 
 pub const TICK_ARRAY_SEED: &str = "tick_array";
 pub const TICK_ARRAY_SIZE_USIZE: usize = 60;
@@ -25,139 +25,16 @@ pub struct TickArrayState {
 impl TickArrayState {
     pub const LEN: usize = 8 + 32 + 4 + TickState::LEN * TICK_ARRAY_SIZE_USIZE + 1 + 115;
 
-    // pub fn key(&self) -> Pubkey {
-    //     Pubkey::find_program_address(
-    //         &[
-    //             TICK_ARRAY_SEED.as_bytes(),
-    //             self.pool_id.as_ref(),
-    //             &self.start_tick_index.to_be_bytes(),
-    //         ],
-    //         &crate::id(),
-    //     )
-    //     .0
-    // }
-    /// Load a TickArrayState of type AccountLoader from tickarray account info, if tickarray account is not exist, then create it.
-    // pub fn get_or_create_tick_array<'info>(
-    //     payer: AccountInfo<'info>,
-    //     tick_array_account_info: AccountInfo<'info>,
-    //     system_program: AccountInfo<'info>,
-    //     pool_state_loader: &AccountLoader<'info, PoolState>,
-    //     tick_array_start_index: i32,
-    //     tick_spacing: u16,
-    // ) -> Result<AccountLoad<'info, TickArrayState>> {
-    //     require!(
-    //         TickArrayState::check_is_valid_start_index(tick_array_start_index, tick_spacing),
-    //         ErrorCode::InvaildTickIndex
-    //     );
-    //
-    //     let tick_array_state = if tick_array_account_info.owner == &system_program::ID {
-    //         let (expect_pda_address, bump) = Pubkey::find_program_address(
-    //             &[
-    //                 TICK_ARRAY_SEED.as_bytes(),
-    //                 pool_state_loader.key().as_ref(),
-    //                 &tick_array_start_index.to_be_bytes(),
-    //             ],
-    //             &crate::id(),
-    //         );
-    //         require_keys_eq!(expect_pda_address, tick_array_account_info.key());
-    //         create_or_allocate_account(
-    //             &crate::id(),
-    //             payer,
-    //             system_program,
-    //             tick_array_account_info.clone(),
-    //             &[
-    //                 TICK_ARRAY_SEED.as_bytes(),
-    //                 pool_state_loader.key().as_ref(),
-    //                 &tick_array_start_index.to_be_bytes(),
-    //                 &[bump],
-    //             ],
-    //             TickArrayState::LEN,
-    //         )?;
-    //         let tick_array_state_loader = AccountLoad::<TickArrayState>::try_from_unchecked(
-    //             &crate::id(),
-    //             &tick_array_account_info,
-    //         )?;
-    //         {
-    //             let mut tick_array_account = tick_array_state_loader.load_init()?;
-    //             tick_array_account.initialize(
-    //                 tick_array_start_index,
-    //                 tick_spacing,
-    //                 pool_state_loader.key(),
-    //             )?;
-    //         }
-    //         tick_array_state_loader
-    //     } else {
-    //         AccountLoad::<TickArrayState>::try_from(&tick_array_account_info)?
-    //     };
-    //     Ok(tick_array_state)
-    // }
-
-    /**
-     * Initialize only can be called when first created
-     */
-    pub fn initialize(
-        &mut self,
-        start_index: i32,
-        tick_spacing: u16,
-        pool_key: Pubkey,
-    ) -> Result<()> {
-        TickArrayState::check_is_valid_start_index(start_index, tick_spacing);
-        self.start_tick_index = start_index;
-        self.pool_id = pool_key;
-        self.recent_epoch = get_recent_epoch()?;
-        Ok(())
-    }
-
-    pub fn update_initialized_tick_count(&mut self, add: bool) -> Result<()> {
-        if add {
-            self.initialized_tick_count += 1;
-        } else {
-            self.initialized_tick_count -= 1;
-        }
-        Ok(())
-    }
-
-    pub fn get_tick_state_mut(
-        &mut self,
-        tick_index: i32,
-        tick_spacing: u16,
-    ) -> Result<&mut TickState> {
-        let offset_in_array = self.get_tick_offset_in_array(tick_index, tick_spacing)?;
-        Ok(&mut self.ticks[offset_in_array])
-    }
-
-    pub fn update_tick_state(
-        &mut self,
-        tick_index: i32,
-        tick_spacing: u16,
-        tick_state: TickState,
-    ) -> Result<()> {
-        let offset_in_array = self.get_tick_offset_in_array(tick_index, tick_spacing)?;
-        self.ticks[offset_in_array] = tick_state;
-        self.recent_epoch = get_recent_epoch()?;
-        Ok(())
-    }
-
-    /// Get tick's offset in current tick array, tick must be included in tick array， otherwise throw an error
-    fn get_tick_offset_in_array(self, tick_index: i32, tick_spacing: u16) -> Result<usize> {
-        let start_tick_index = TickArrayState::get_array_start_index(tick_index, tick_spacing);
-        require_eq!(
-            start_tick_index,
-            self.start_tick_index,
-            ErrorCode::InvalidTickArray
-        );
-        let offset_in_array =
-            ((tick_index - self.start_tick_index) / i32::from(tick_spacing)) as usize;
-        Ok(offset_in_array)
-    }
-
     /// Base on swap directioin, return the first initialized tick in the tick array.
-    pub fn first_initialized_tick(&mut self, zero_for_one: bool) -> Result<&mut TickState> {
+    pub fn first_initialized_tick(&mut self, zero_for_one: bool) -> anyhow::Result<&mut TickState> {
         if zero_for_one {
             let mut i = TICK_ARRAY_SIZE - 1;
             while i >= 0 {
                 if self.ticks[i as usize].is_initialized() {
-                    return Ok(self.ticks.get_mut(i as usize).unwrap());
+                    return self
+                        .ticks
+                        .get_mut(i as usize)
+                        .ok_or(anyhow!("tick cannot be None"));
                 }
                 i -= 1;
             }
@@ -165,12 +42,12 @@ impl TickArrayState {
             let mut i = 0;
             while i < TICK_ARRAY_SIZE_USIZE {
                 if self.ticks[i].is_initialized() {
-                    return Ok(self.ticks.get_mut(i).unwrap());
+                    return self.ticks.get_mut(i).ok_or(anyhow!("tick cannot be None"));
                 }
                 i += 1;
             }
         }
-        err!(ErrorCode::InvalidTickArray)
+        Err(anyhow!(ErrorCode::InvalidTickArray))
     }
 
     /// Get next initialized tick in tick array, `current_tick_index` can be any tick index, in other words, `current_tick_index` not exactly a point in the tickarray,

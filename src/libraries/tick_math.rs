@@ -176,7 +176,7 @@ pub fn get_tick_at_sqrt_price(sqrt_price_x64: u128) -> Result<i32, anchor_lang::
 
     Ok(if tick_low == tick_high {
         tick_low
-    } else if get_sqrt_price_at_tick(tick_high).unwrap() <= sqrt_price_x64 {
+    } else if get_sqrt_price_at_tick(tick_high)? <= sqrt_price_x64 {
         tick_high
     } else {
         tick_low

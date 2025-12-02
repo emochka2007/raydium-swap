@@ -132,7 +132,7 @@ impl TickArrayBitmapExtension {
         last_tick_array_start_index: i32,
         tick_spacing: u16,
         zero_for_one: bool,
-    ) -> Result<(bool, i32)> {
+    ) -> anyhow::Result<(bool, i32)> {
         let multiplier = TickArrayState::tick_count(tick_spacing);
         let next_tick_array_start_index = if zero_for_one {
             last_tick_array_start_index - multiplier
@@ -152,12 +152,12 @@ impl TickArrayBitmapExtension {
 
         let (_, tickarray_bitmap) = self.get_bitmap(next_tick_array_start_index, tick_spacing)?;
 
-        Ok(Self::next_initialized_tick_array_in_bitmap(
+        Self::next_initialized_tick_array_in_bitmap(
             tickarray_bitmap,
             next_tick_array_start_index,
             tick_spacing,
             zero_for_one,
-        ))
+        )
     }
 
     pub fn next_initialized_tick_array_in_bitmap(
@@ -165,7 +165,7 @@ impl TickArrayBitmapExtension {
         next_tick_array_start_index: i32,
         tick_spacing: u16,
         zero_for_one: bool,
-    ) -> (bool, i32) {
+    ) -> anyhow::Result<(bool, i32)> {
         let (bitmap_min_tick_boundary, bitmap_max_tick_boundary) =
             get_bitmap_tick_boundary(next_tick_array_start_index, tick_spacing);
 
@@ -180,16 +180,16 @@ impl TickArrayBitmapExtension {
             let next_bit = if offset_bit_map.is_zero() {
                 None
             } else {
-                Some(u16::try_from(offset_bit_map.leading_zeros()).unwrap())
+                Some(u16::try_from(offset_bit_map.leading_zeros())?)
             };
 
             if let Some(next_bit) = next_bit {
                 let next_array_start_index = next_tick_array_start_index
                     - i32::from(next_bit) * TickArrayState::tick_count(tick_spacing);
-                (true, next_array_start_index)
+                Ok((true, next_array_start_index))
             } else {
                 // not found til to the end
-                (false, bitmap_min_tick_boundary)
+                Ok((false, bitmap_min_tick_boundary))
             }
         } else {
             // tick from lower to upper
@@ -199,18 +199,18 @@ impl TickArrayBitmapExtension {
             let next_bit = if offset_bit_map.is_zero() {
                 None
             } else {
-                Some(u16::try_from(offset_bit_map.trailing_zeros()).unwrap())
+                Some(u16::try_from(offset_bit_map.trailing_zeros())?)
             };
             if let Some(next_bit) = next_bit {
                 let next_array_start_index = next_tick_array_start_index
                     + i32::from(next_bit) * TickArrayState::tick_count(tick_spacing);
-                (true, next_array_start_index)
+                Ok((true, next_array_start_index))
             } else {
                 // not found til to the end
-                (
+                Ok((
                     false,
                     bitmap_max_tick_boundary - TickArrayState::tick_count(tick_spacing),
-                )
+                ))
             }
         }
     }

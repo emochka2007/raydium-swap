@@ -7,6 +7,7 @@ use crate::interface::{
 };
 use crate::states::POOL_TICK_ARRAY_BITMAP_SEED;
 use anchor_lang::Discriminator;
+use anchor_lang::prelude::{Rent, SolanaSysvar};
 use anchor_spl::memo::spl_memo;
 use anyhow::{Context, anyhow};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -23,6 +24,7 @@ use solana_sdk::signature::{Keypair, Signature};
 use solana_sdk::signer::Signer;
 use solana_sdk::transaction::Transaction;
 use solana_system_interface::instruction::transfer;
+use spl_token::solana_program::program_pack::Pack;
 use tracing::log::info;
 use tracing::{debug, warn};
 
@@ -331,6 +333,7 @@ impl AmmSwapClient {
         mint: Pubkey,
         lamports_fee: Option<u64>,
     ) -> anyhow::Result<Pubkey> {
+        let rent = Rent::get()?;
         let associated_token_account =
             spl_associated_token_account::get_associated_token_address(&self.owner.pubkey(), &mint);
         let balance = self
@@ -361,7 +364,8 @@ impl AmmSwapClient {
                     transfer(
                         &self.owner.pubkey(),
                         &associated_token_account,
-                        lamports_fee.unwrap_or(2_500_000),
+                        lamports_fee
+                            .unwrap_or(rent.minimum_balance(spl_token::state::Account::LEN)),
                     ),
                     spl_token::instruction::sync_native(
                         &spl_token::id(),

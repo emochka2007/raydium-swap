@@ -156,9 +156,9 @@ pub async fn calculate_swap_change(
     };
     let transfer_fee = if base_in {
         if zero_for_one {
-            get_transfer_fee(&mint0_state, epoch, amount)
+            get_transfer_fee(&mint0_state, epoch, amount)?
         } else {
-            get_transfer_fee(&mint1_state, epoch, amount)
+            get_transfer_fee(&mint1_state, epoch, amount)?
         }
     } else {
         0

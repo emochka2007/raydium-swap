@@ -14,7 +14,7 @@ pub async fn get_anchor_account<T: AccountDeserialize>(
         .value
     {
         let mut data: &[u8] = &account.data;
-        let ret = T::try_deserialize(&mut data).unwrap();
+        let ret = T::try_deserialize(&mut data)?;
         Ok(Some(ret))
     } else {
         Ok(None)
