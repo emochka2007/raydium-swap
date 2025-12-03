@@ -2791,7 +2791,7 @@ dependencies = [
 
 [[package]]
 name = "raydium-amm-swap"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -2801,8 +2801,10 @@ dependencies = [
  "bytemuck",
  "dotenvy",
  "hex",
+ "log",
  "reqwest",
  "serde",
+ "serde_json",
  "solana-address 2.0.0",
  "solana-client",
  "solana-commitment-config",

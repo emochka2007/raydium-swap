@@ -24,29 +24,26 @@ async fn main() {
     let owner = env::var("KEYPAIR").expect("KEYPAIR env is not presented");
     let keypair = from_bytes_to_key_pair(owner);
     let owner_pubkey = keypair.pubkey();
-    println!("Owner address {}", owner_pubkey.to_string());
+    info!("Owner address {}", owner_pubkey.to_string());
     let amm_swap_client = AmmSwapClient::new(rpc_client, keypair);
 
     // Choose which kind of pool to query.
-    let pool_type = PoolType::Concentrated;
+    let pool_type = PoolType::Standard;
 
     let all_mint_pools = amm_swap_client
-        .fetch_pool_info(&mint_a, &mint_b, &pool_type, Some(2), None, None, None)
+        .fetch_pool_info(&mint_a, &mint_b, &pool_type, Some(100), None, None, None)
         .await
         .unwrap();
-
-    // First pool_id
-    let pool_id_str = &all_mint_pools.data.data.first().unwrap().id;
-
-    let pool_id = Pubkey::from_str(pool_id_str).unwrap();
-
-    let pool_info = amm_swap_client.fetch_pool_by_id(&pool_id).await.unwrap();
+    info!("{:?}", all_mint_pools);
 
     // For now, compute_amount_out & swap are only wired for standard AMM v4.
     let mint_a = Address::from_str_const(&mint_a);
     let mint_b = Address::from_str_const(&mint_b);
+    let first_pool = all_mint_pools.first().unwrap();
     match pool_type {
         PoolType::Standard => {
+            let pool_id = Pubkey::from_str(&first_pool.id).unwrap();
+            let pool_info = amm_swap_client.fetch_pool_by_id(&pool_id).await.unwrap();
             let pool_keys: PoolKeys<AmmPool> = amm_swap_client
                 .fetch_pools_keys_by_id(&pool_id)
                 .await
@@ -80,6 +77,7 @@ async fn main() {
         }
 
         PoolType::Concentrated => {
+            let pool_id = Pubkey::from_str(&first_pool.id).unwrap();
             let pool_keys: PoolKeys<ClmmPool> = amm_swap_client
                 .fetch_pools_keys_by_id(&pool_id)
                 .await
@@ -92,7 +90,7 @@ async fn main() {
             let ata_b = solana_pubkey::Pubkey::from(
                 get_associated_token_address(&owner_pubkey, &mint_b).to_bytes(),
             );
-            println!("ata_a {}", ata_a.to_string());
+            info!("ata_a {}", ata_a.to_string());
             let keys = ClmmSwapParams {
                 pool_id: solana_pubkey::Pubkey::from_str(&key.id).unwrap(),
                 user_input_token: ata_a,

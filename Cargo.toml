@@ -1,6 +1,6 @@
 [package]
 name = "raydium-amm-swap"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2024"
 authors = ["Nikita Pozniakov"]
 description = "A high‑level client for interacting with Raydium AMM pools on Solana"
@@ -45,3 +45,5 @@ solana-program = "3.0.0"
 uint = { git = "https://github.com/raydium-io/parity-common", version = "0.9.5", package = "uint" }
 bytemuck = { version = "1.19.0", features = ["derive", "min_const_generics"] }
 solana-program-pack = "2.2.1"
+serde_json = "1.0.145"
+log = "0.4.28"

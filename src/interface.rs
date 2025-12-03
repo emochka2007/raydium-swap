@@ -1,6 +1,7 @@
 //! Types for deserializing JSON responses from the Raydium HTTP API.
 
 use serde::Deserialize;
+use serde_json::Value;
 use std::fmt::Display;
 
 /// Response from `/pools/info/mint`.
@@ -174,7 +175,7 @@ pub struct ClmmPoolInfosResponse {
 #[derive(Deserialize, Debug)]
 pub struct ClmmManyPoolsInfo {
     pub count: Option<u32>,
-    pub data: Vec<ClmmPool>,
+    pub data: Vec<Value>,
     #[serde(rename = "hasNextPage")]
     pub has_next_page: bool,
 }
@@ -187,10 +188,10 @@ pub struct ClmmConfig {
     pub index: u32,
     pub protocol_fee_rate: u64,
     pub trade_fee_rate: u64,
-    pub tick_spacing: u64,
-    pub fund_fee_rate: u64,
-    pub default_range: f64,
-    pub default_range_point: Vec<f64>,
+    pub tick_spacing: Option<u64>,
+    pub fund_fee_rate: Option<u64>,
+    pub default_range: Option<f64>,
+    pub default_range_point: Option<Vec<f64>>,
 }
 
 /// Detailed information for a concentrated (CLMM) pool.

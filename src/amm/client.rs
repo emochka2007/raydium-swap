@@ -12,6 +12,7 @@ use anchor_lang::prelude::{Rent, SolanaSysvar};
 use anchor_spl::memo::spl_memo;
 use anyhow::{Context, anyhow};
 use borsh::{BorshDeserialize, BorshSerialize};
+use log::warn;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use solana_address::Address;
@@ -26,7 +27,7 @@ use solana_sdk::transaction::Transaction;
 use solana_system_interface::instruction::transfer;
 use spl_token::solana_program::program_pack::Pack;
 use tracing::log::info;
-use tracing::{debug, warn};
+use tracing::{debug, error};
 
 /// The result of computing a swap quote.
 #[derive(Debug)]
@@ -159,19 +160,37 @@ impl AmmSwapClient {
         query: Option<&[(&str, &str)]>,
     ) -> anyhow::Result<T> {
         let url = format!("{}{}", self.base_url, path.unwrap_or_default());
-        let response = self
+
+        let resp = self
             .reqwest_client
             .get(&url)
             .query(query.unwrap_or(&[]))
             .send()
             .await
-            .context("Raydium amm get failed")?
-            .error_for_status()
-            .context("Raydium non-200")?;
+            .with_context(|| format!("Raydium AMM GET failed for {}", url))?;
 
-        Ok(response.json::<T>().await?)
+        let status = resp.status();
+        let body = resp
+            .text()
+            .await
+            .with_context(|| format!("Failed to read response body from {}", url))?;
+
+        if !status.is_success() {
+            error!("Raydium non-200 {} for {}. Body: {}", status, url, body);
+            anyhow::bail!("Raydium non-200 {} for {}", status, url);
+        }
+
+        debug!("Raydium response body for {}: {}", url, body);
+
+        let parsed: T = serde_json::from_str(&body).with_context(|| {
+            format!(
+                "Failed to parse Raydium response as JSON. Status: {}, Body: {}",
+                status, body
+            )
+        })?;
+
+        Ok(parsed)
     }
-
     /// Fetch raw pool account keys by pool ID via HTTP API.
     pub async fn fetch_pools_keys_by_id<T: DeserializeOwned>(
         &self,
@@ -237,7 +256,7 @@ impl AmmSwapClient {
         page: Option<u32>,
         pool_sort_field: Option<&str>,
         sort_type: Option<&str>,
-    ) -> anyhow::Result<ClmmPoolInfosResponse> {
+    ) -> anyhow::Result<Vec<ClmmPool>> {
         let page_size_str = page_size.unwrap_or(100).to_string();
         let page_str = page.unwrap_or(1).to_string();
         let pool_type_str = pool_type.to_string();
@@ -254,7 +273,21 @@ impl AmmSwapClient {
         ];
         let resp: ClmmPoolInfosResponse =
             self.get(Some("/pools/info/mint"), Some(&headers)).await?;
-        Ok(resp)
+        let mut parsed_pools = Vec::new();
+        for pool in &resp.data.data {
+            match serde_json::from_value::<ClmmPool>(pool.clone()) {
+                Ok(parsed_pool) => parsed_pools.push(parsed_pool),
+                Err(e) => {
+                    warn!(
+                        "Encountered non amm/clmm pool: error={}, programId={:?}",
+                        e,
+                        pool.get("id")
+                    );
+                    continue;
+                }
+            }
+        }
+        Ok(parsed_pools)
     }
 
     /// Compute a swap quote (amount out, fee, slippage).
