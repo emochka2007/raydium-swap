@@ -144,11 +144,22 @@ impl AmmSwapClient {
     /// - `mint_2`: the quote token mint.
     /// - `owner`: signer for transaction execution.
     pub fn new(rpc_client: RpcClient, owner: Keypair) -> Self {
+        Self::new_with_base_url(rpc_client, owner, "https://api-v3.raydium.io")
+    }
+
+    /// Creates a new swap client with a custom Raydium HTTP base URL.
+    ///
+    /// This is primarily useful for testing or pointing at alternate
+    /// Raydium API environments.
+    pub fn new_with_base_url(
+        rpc_client: RpcClient,
+        owner: Keypair,
+        base_url: impl Into<String>,
+    ) -> Self {
         let reqwest_client = Client::new();
-        let base_url = "https://api-v3.raydium.io".to_string();
         Self {
             rpc_client,
-            base_url,
+            base_url: base_url.into(),
             owner,
             reqwest_client,
         }
@@ -365,7 +376,7 @@ impl AmmSwapClient {
         lamports_fee: Option<u64>,
     ) -> anyhow::Result<Pubkey> {
         let associated_token_account =
-            spl_associated_token_account::get_associated_token_address(&self.owner.pubkey(), &mint);
+            spl_associated_token_account::get_associated_token_address(&self.owner.pubkey(), mint);
         let balance = self
             .rpc_client
             .get_token_account_balance(&associated_token_account)
@@ -387,7 +398,7 @@ impl AmmSwapClient {
                     spl_associated_token_account::instruction::create_associated_token_account(
                         &self.owner.pubkey(),
                         &self.owner.pubkey(),
-                        &mint,
+                        mint,
                         // Could be a potential bug with the spl_token2022 ata
                         &spl_token::id(),
                     ),

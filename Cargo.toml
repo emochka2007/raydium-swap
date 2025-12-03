@@ -47,4 +47,6 @@ bytemuck = { version = "1.19.0", features = ["derive", "min_const_generics"] }
 solana-program-pack = "2.2.1"
 serde_json = "1.0.145"
 log = "0.4.28"
+
+[dev-dependencies]
 tracing-subscriber = "0.3.22"
