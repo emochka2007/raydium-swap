@@ -4,51 +4,14 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::fmt::Display;
 
-/// Response from `/pools/info/mint`.
-#[allow(dead_code)]
-#[derive(Deserialize, Debug)]
-pub struct PoolInfosResponse {
-    /// The request ID.
-    pub id: String,
-    /// Whether the API call was successful.
-    pub success: bool,
-    /// The payload data.
-    pub data: ManyPoolsInfo,
-}
-
-/// Metadata and list of pools.
-#[allow(dead_code)]
-#[derive(Deserialize, Debug)]
-pub struct ManyPoolsInfo {
-    pub count: Option<u32>,
-    pub data: Vec<AmmPool>,
-}
-
-/// Response from `/pools/info/ids`.
-#[derive(Deserialize, Debug)]
-#[allow(dead_code)]
-pub struct SinglePoolInfo {
-    pub data: Vec<AmmPool>,
-}
-
 /// Response from `/pools/info/ids` for concentrated (CLMM) pools.
 #[derive(Deserialize, Debug)]
-#[allow(dead_code)]
 pub struct ClmmSinglePoolInfo {
     pub data: Vec<ClmmPool>,
 }
 
-/// Combined response type for single‑pool lookups by ID.
-#[derive(Debug)]
-pub enum SinglePoolInfoByType {
-    /// Standard AMM v4 pool response.
-    Standard(SinglePoolInfo),
-    /// Concentrated (CLMM) pool response.
-    Concentrated(ClmmSinglePoolInfo),
-}
-
 /// Period‑specific stats for a pool.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PoolPeriod {
     /// Trading volume in base token.
@@ -70,7 +33,7 @@ pub struct PoolPeriod {
 }
 
 /// Info about a default reward stream.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct RewardDefault {
     pub mint: Mint,
@@ -80,9 +43,8 @@ pub struct RewardDefault {
 }
 
 /// Token mint metadata.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub struct Mint {
     pub chain_id: u32,
     pub address: String,
@@ -96,13 +58,12 @@ pub struct Mint {
 }
 
 /// Empty placeholder for mint extensions.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct MintExtensions {}
 
 /// Response from `/pools/key/ids`.
 #[derive(Deserialize, Debug)]
-#[allow(dead_code)]
 pub struct PoolKeys<PoolType> {
     pub id: String,
     pub success: bool,
@@ -112,7 +73,6 @@ pub struct PoolKeys<PoolType> {
 /// On‑chain account addresses needed for swaps.
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub struct AmmPool {
     /// AMM program ID.
     pub program_id: String,
@@ -183,6 +143,7 @@ pub struct ClmmManyPoolsInfo {
 /// CLMM‑specific pool config block.
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+#[derive(Clone)]
 pub struct ClmmConfig {
     pub id: String,
     pub index: u32,
@@ -194,8 +155,7 @@ pub struct ClmmConfig {
     pub default_range_point: Option<Vec<f64>>,
 }
 
-/// Detailed information for a concentrated (CLMM) pool.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ClmmPool {
     /// Type of pool, e.g. "Concentrated".

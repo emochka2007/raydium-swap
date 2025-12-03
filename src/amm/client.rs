@@ -287,7 +287,15 @@ impl AmmSwapClient {
                 }
             }
         }
-        Ok(parsed_pools)
+
+        // Filter pools to only have program_id = AMM and CLMM
+        let filtered_pools = parsed_pools
+            .iter()
+            .filter(|pool| pool.program_id == AMM_V4 || pool.program_id == CLMM)
+            .cloned()
+            .collect();
+
+        Ok(filtered_pools)
     }
 
     /// Compute a swap quote (amount out, fee, slippage).

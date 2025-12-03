@@ -14,6 +14,7 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt().init();
     dotenvy::dotenv().unwrap();
     let amount_in = 1_000_000_;
     let slippage = 0.01;

@@ -1,8 +1,9 @@
-## A Rust client library for interacting with Raydium AMM v4 on Solana, providing:
-- Fetching pool metadata off-chain via Raydium HTTP API
+## A Rust client library for interacting with Raydium AMM v4 and CLMM pools on Solana, providing:
+- Fetching pool metadata off-chain via the Raydium HTTP API
 - Retrieving on-chain reserves directly from Solana RPC
 - Computing swap quotes with fee & slippage support
 - Executing swap transactions programmatically
+- Support for both standard AMM v4 pools and concentrated-liquidity (CLMM) pools via `PoolType::Standard` and `PoolType::Concentrated`.
 
 ## Usage
 
@@ -14,7 +15,7 @@ use anyhow::anyhow;
 use raydium_amm_swap::amm::client::AmmSwapClient;
 use raydium_amm_swap::consts::SOL_MINT;
 use raydium_amm_swap::helpers::from_bytes_to_key_pair;
-use raydium_amm_swap::interface::{AmmPool, PoolInfosByType, PoolKeys, PoolType};
+use raydium_amm_swap::interface::{AmmPool, PoolKeys, PoolType};
 use solana_address::Address;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
@@ -38,20 +39,21 @@ async fn main() -> anyhow::Result<()> {
 
     let client = AmmSwapClient::new(rpc_client, keypair);
 
-    // In this example we use a standard AMM v4 pool.
+    // In this example we request a standard AMM v4 pool.
+    // You can also pass `PoolType::Concentrated` to work with CLMM pools.
     let pool_type = PoolType::Standard;
 
     let pools = client
         .fetch_pool_info(&mint_a_str, &mint_b_str, &pool_type, Some(1), None, None, None)
         .await?;
 
-    // Choose the first matching pool.
-    let pool_id_str = match &pools {
-        PoolInfosByType::Standard(p) => &p.data.data.first().expect("no pools").id,
-        PoolInfosByType::Concentrated(_) => {
-            return Err(anyhow!("expected a standard pool, got CLMM"));
-        }
-    };
+    if pools.is_empty() {
+        return Err(anyhow!("no matching pools found"));
+    }
+
+    // Choose the first matching pool (works for both standard and CLMM).
+    let first_pool = &pools[0];
+    let pool_id_str = &first_pool.id;
 
     let pool_id = Pubkey::from_str(pool_id_str)?;
 

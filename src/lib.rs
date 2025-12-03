@@ -4,6 +4,8 @@
 //! - Retrieval of on‑chain and off‑chain pool data (`fetch_pool_info`, `fetch_pool_by_id`, etc.)
 //! - Computation of swap quotes with fee and slippage handling (`compute_amount_out`).
 //! - Execution of swaps against a given pool (`swap_amm`, `swap_clmm`).
+//! - Support for both standard AMM v4 pools and concentrated‑liquidity (CLMM) pools via
+//!   `PoolType::Standard` and `PoolType::Concentrated`.
 //!
 //! # Examples
 //!
@@ -11,19 +13,27 @@
 //!
 //! use std::env;
 //! use std::str::FromStr;
-//! use anchor_lang::prelude::Pubkey;
 //! use anyhow::anyhow;
+//! use raydium_amm_swap::amm::client::AmmSwapClient;
+//! use raydium_amm_swap::consts::SOL_MINT;
+//! use raydium_amm_swap::helpers::from_bytes_to_key_pair;
+//! use raydium_amm_swap::interface::{AmmPool, ClmmPool, ClmmSwapParams, PoolKeys, PoolType};
+//! use solana_address::Address;
+//! use solana_sdk::pubkey::Pubkey;
+//! use solana_sdk::signature::Signer;
+//! use solana_client::nonblocking::rpc_client::RpcClient;
+//! use spl_associated_token_account::get_associated_token_address;
+//! use tracing::info;
 //!
-//! use solana_client::rpc_client::RpcClient;
 //!
 //! #[tokio::main]
-//! async fn main() {
-//!     dotenvy::dotenv().unwrap();
-//!     let amount_in = 1_000_000_;
-//!     let slippage = 0.01;
-//!     let url = env::var("RPC_URL").unwrap();
-//!     let mint_a = env::var("MINT_1").unwrap_or(SOL_MINT.to_string());
-//!     let mint_b = env::var("MINT_2").unwrap();
+//! async fn main() -> anyhow::Result<()> {
+//!     dotenvy::dotenv().ok();
+//!     let amount_in: u64 = 1_000_000;
+//!     let slippage: f64 = 0.01;
+//!     let url = env::var("RPC_URL")?;
+//!     let mint_a_str = env::var("MINT_1").unwrap_or(SOL_MINT.to_string());
+//!     let mint_b_str = env::var("MINT_2")?;
 //!     let rpc_client = RpcClient::new(url);
 //!     let owner = env::var("KEYPAIR").expect("KEYPAIR env is not presented");
 //!     let keypair = from_bytes_to_key_pair(owner);
@@ -31,33 +41,22 @@
 //!     println!("Owner address {}", owner_pubkey.to_string());
 //!     let amm_swap_client = AmmSwapClient::new(rpc_client, keypair);
 //!
-//!     //! Choose which kind of pool to query.
+//!     // Choose which kind of pool to query.
+//!     // You can also pass `PoolType::Concentrated` to work with CLMM pools.
 //!     let pool_type = PoolType::Standard;
 //!
 //!     let all_mint_pools = amm_swap_client
-//!         .fetch_pool_info(&mint_a, &mint_b, &pool_type, Some(2), None, None, None)
+//!         .fetch_pool_info(&mint_a_str, &mint_b_str, &pool_type, Some(100), None, None, None)
 //!         .await
 //!         .unwrap();
-//!
-//!     //! First pool_id
-//!         let all_mint_pools = amm_swap_client
-//!         .fetch_pool_info(&mint_a, &mint_b, &pool_type, Some(2), None, None, None)
-//!         .await
-//!         .unwrap();
-//!
-//!     // First pool_id
-//!     let pool_id_str = &all_mint_pools.data.data.first().unwrap().id;
-//!
-//!     let pool_id = Pubkey::from_str(pool_id_str).unwrap();
-//!
-//!     let pool_info = amm_swap_client.fetch_pool_by_id(&pool_id).await.unwrap();
 //!
 //!     match pool_type {
 //!         PoolType::Standard => {
-//!             let pool_keys: PoolKeys<AmmPool> = amm_swap_client
-//!                 .fetch_pools_keys_by_id(&pool_id)
-//!                 .await
-//!                 .unwrap();
+//!             let first_pool = all_mint_pools.first().ok_or_else(|| anyhow!("no pools"))?;
+//!             let pool_id = Pubkey::from_str(&first_pool.id).unwrap();
+//!             let pool_info = amm_swap_client.fetch_pool_by_id(&pool_id).await.unwrap();
+//!             let pool_keys: PoolKeys<AmmPool> =
+//!                 amm_swap_client.fetch_pools_keys_by_id(&pool_id).await.unwrap();
 //!
 //!             let rpc_data = amm_swap_client
 //!                 .get_rpc_pool_info(&pool_id)
@@ -69,8 +68,8 @@
 //!                 .compute_amount_out(&rpc_data, pool, amount_in, slippage)
 //!                 .unwrap();
 //!
-//!             let mint_a_addr = Address::from_str_const(&mint_a);
-//!             let mint_b_addr = Address::from_str_const(&mint_b);
+//!             let mint_a_addr = Address::from_str_const(&mint_a_str);
+//!             let mint_b_addr = Address::from_str_const(&mint_b_str);
 //!
 //!             let key = pool_keys.data.get(0).unwrap();
 //!             info!("Standard pool key: {:?}", key);
@@ -90,6 +89,8 @@
 //!         }
 //!
 //!         PoolType::Concentrated => {
+//!             let first_pool = all_mint_pools.first().ok_or_else(|| anyhow!("no pools"))?;
+//!             let pool_id = Pubkey::from_str(&first_pool.id).unwrap();
 //!             let pool_keys: PoolKeys<ClmmPool> = amm_swap_client
 //!                 .fetch_pools_keys_by_id(&pool_id)
 //!                 .await
@@ -97,11 +98,17 @@
 //!             let key = pool_keys.data.get(0).unwrap();
 //!             info!("Standard pool key: {:?}", key);
 //!             let ata_a = solana_pubkey::Pubkey::from(
-//!                 get_associated_token_address(&owner_pubkey, &Address::from_str_const(&mint_a))
+//!                 get_associated_token_address(
+//!                     &owner_pubkey,
+//!                     &Address::from_str_const(&mint_a_str),
+//!                 )
 //!                     .to_bytes(),
 //!             );
 //!             let ata_b = solana_pubkey::Pubkey::from(
-//!                 get_associated_token_address(&owner_pubkey, &Address::from_str_const(&mint_b))
+//!                 get_associated_token_address(
+//!                     &owner_pubkey,
+//!                     &Address::from_str_const(&mint_b_str),
+//!                 )
 //!                     .to_bytes(),
 //!             );
 //!             println!("ata_a {}", ata_a.to_string());
@@ -120,6 +127,8 @@
 //!             info!("{sig}");
 //!         }
 //!     }
+//!
+//!     Ok(())
 //! }
 //
 use anchor_lang::prelude::declare_id;
