@@ -2,7 +2,7 @@
 //!
 //! This crate provides:
 //! - Retrieval of on‑chain and off‑chain pool data (`fetch_pool_info`, `fetch_pool_by_id`, etc.)
-//! - Computation of swap quotes with fee and slippage handling (`compute_amount_out`).
+//! - Computation of swap quotes with fee and slippage handling (`compute_amount_out`, `compute_amount_in`).
 //! - Execution of swaps against a given pool (`swap_amm`, `swap_clmm`).
 //! - Support for both standard AMM v4 pools and concentrated‑liquidity (CLMM) pools via
 //!   `PoolType::Standard` and `PoolType::Concentrated`.
