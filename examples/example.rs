@@ -16,7 +16,7 @@ use tracing::info;
 async fn main() {
     tracing_subscriber::fmt().init();
     dotenvy::dotenv().unwrap();
-    let amount_in = 1_000_000_;
+    let amount_in = 1_000_000;
     let slippage = 0.01;
     let url = env::var("RPC_URL").unwrap();
     let mint_a = env::var("MINT_1").unwrap_or(SOL_MINT.to_string());
@@ -91,11 +91,21 @@ async fn main() {
             let ata_b = solana_pubkey::Pubkey::from(
                 get_associated_token_address(&owner_pubkey, &mint_b).to_bytes(),
             );
+            info!("ata b {}", ata_b.to_string());
             info!("ata_a {}", ata_a.to_string());
+            let mint_a = amm_swap_client
+                .get_or_create_token_program(&mint_a, None)
+                .await
+                .unwrap();
+
+            let mint_b = amm_swap_client
+                .get_or_create_token_program(&mint_b, None)
+                .await
+                .unwrap();
             let keys = ClmmSwapParams {
                 pool_id: solana_pubkey::Pubkey::from_str(&key.id).unwrap(),
-                user_input_token: ata_a,
-                user_output_token: ata_b.clone(),
+                user_input_token: solana_pubkey::Pubkey::from_str_const(&mint_a.to_string()),
+                user_output_token: solana_pubkey::Pubkey::from_str_const(&mint_b.to_string()),
                 amount_specified: amount_in,
                 limit_price: None,
                 // if false -> amount is amount_in

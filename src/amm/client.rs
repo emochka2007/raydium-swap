@@ -46,6 +46,23 @@ pub struct ComputeAmountOutResult {
     pub fee: u64,
 }
 
+/// The result of computing the required input amount for a desired output.
+#[derive(Debug)]
+pub struct ComputeAmountInResult {
+    /// Raw amount in before slippage.
+    pub amount_in: u64,
+    /// Maximum amount in after slippage tolerance.
+    pub max_amount_in: u64,
+    /// Current on‑chain price (quote/base).
+    pub current_price: f64,
+    /// Execution price for the quoted trade.
+    pub execution_price: f64,
+    /// Percent price impact of this trade.
+    pub price_impact: f64,
+    /// Fee deducted from the input.
+    pub fee: u64,
+}
+
 #[derive(BorshSerialize, BorshDeserialize, Debug)]
 pub struct LiquidityStateLayoutV4 {
     pub status: u64,
@@ -202,6 +219,11 @@ impl AmmSwapClient {
 
         Ok(parsed)
     }
+
+    pub fn owner_pubkey(&self) -> Pubkey {
+        self.owner.pubkey()
+    }
+
     /// Fetch raw pool account keys by pool ID via HTTP API.
     pub async fn fetch_pools_keys_by_id<T: DeserializeOwned>(
         &self,
@@ -370,7 +392,115 @@ impl AmmSwapClient {
         })
     }
 
-    async fn get_or_create_token_program(
+    /// Compute the required swap input (amount in, fee, slippage).
+    ///
+    /// This is the inverse of [`compute_amount_out`]: it finds the smallest
+    /// input amount such that the pool would output at least `amount_out`
+    /// (before applying the slippage tolerance), using the same constant
+    /// product curve and on-chain fee logic.
+    ///
+    /// # Arguments
+    ///
+    /// - `rpc_pool_info`: on‑chain reserves.
+    /// - `pool_info`: off‑chain pool metadata.
+    /// - `amount_out`: desired amount of quote token to receive (in the smallest units).
+    /// - `slippage`: tolerance (e.g. `0.005` for 0.5%).
+    pub fn compute_amount_in(
+        &self,
+        rpc_pool_info: &RpcPoolInfo,
+        pool_info: &ClmmPool,
+        amount_out: u64,
+        slippage: f64,
+    ) -> anyhow::Result<ComputeAmountInResult> {
+        let reserve_in = rpc_pool_info.base_reserve;
+        let reserve_out = rpc_pool_info.quote_reserve;
+
+        if amount_out == 0 {
+            return Err(anyhow!("amount_out must be greater than zero"));
+        }
+
+        if amount_out >= reserve_out {
+            return Err(anyhow!(
+                "requested amount_out {} exceeds pool reserve {}",
+                amount_out,
+                reserve_out
+            ));
+        }
+
+        // Ensure the target output is achievable with current liquidity by
+        // checking the extreme case of consuming up to all available input.
+        let max_input = reserve_in;
+        let max_quote = self.compute_amount_out(rpc_pool_info, pool_info, max_input, 0.0)?;
+        if max_quote.amount_out < amount_out {
+            return Err(anyhow!(
+                "requested amount_out {} cannot be satisfied by pool liquidity (max reachable {})",
+                amount_out,
+                max_quote.amount_out
+            ));
+        }
+
+        // Binary-search the minimal amount_in that yields at least amount_out,
+        // using the same math as `compute_amount_out` so rounding and fees
+        // stay consistent.
+        let mut low: u64 = 1;
+        let mut high: u64 = max_input;
+        let mut required_in: u64 = max_input;
+
+        while low <= high {
+            let mid = low + (high - low) / 2;
+            let quote = self.compute_amount_out(rpc_pool_info, pool_info, mid, 0.0)?;
+
+            if quote.amount_out >= amount_out {
+                required_in = mid;
+                if mid == 0 {
+                    break;
+                }
+                if mid == 1 {
+                    break;
+                }
+                high = mid.saturating_sub(1);
+            } else {
+                low = mid.saturating_add(1);
+            }
+        }
+
+        let fee = required_in
+            .saturating_mul(LIQUIDITY_FEES_NUMERATOR)
+            .div_ceil(LIQUIDITY_FEES_DENOMINATOR);
+        let amount_in_with_fee = required_in.saturating_sub(fee);
+
+        let mint_in_decimals = pool_info.mint_a.decimals;
+        let mint_out_decimals = pool_info.mint_b.decimals;
+
+        let div_in = 10u128.pow(mint_in_decimals);
+        let div_out = 10u128.pow(mint_out_decimals);
+
+        let reserve_in_f = reserve_in as f64 / div_in as f64;
+        let reserve_out_f = reserve_out as f64 / div_out as f64;
+
+        // ------- Current price calculation ---------
+        let current_price = reserve_out_f / reserve_in_f;
+
+        // ------- Execution price and impact -------
+        let exec_out_f = amount_out as f64 / div_out as f64;
+        let exec_in_f = amount_in_with_fee as f64 / div_in as f64;
+        let execution_price = exec_out_f / exec_in_f;
+
+        let price_impact = (current_price - execution_price) / current_price * 100.0;
+
+        let max_amount_in = ((required_in as f64) * (1.0 + slippage)).ceil() as u64;
+
+        Ok(ComputeAmountInResult {
+            amount_in: required_in,
+            max_amount_in,
+            current_price,
+            execution_price,
+            price_impact,
+            fee,
+        })
+    }
+
+    pub async fn get_or_create_token_program(
         &self,
         mint: &Pubkey,
         lamports_fee: Option<u64>,
