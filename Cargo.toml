@@ -1,6 +1,6 @@
 [package]
 name = "raydium-amm-swap"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2024"
 authors = ["Nikita Pozniakov"]
 description = "A high‑level client for interacting with Raydium AMM pools on Solana"

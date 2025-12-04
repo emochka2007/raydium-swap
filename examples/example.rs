@@ -29,7 +29,7 @@ async fn main() {
     let amm_swap_client = AmmSwapClient::new(rpc_client, keypair);
 
     // Choose which kind of pool to query.
-    let pool_type = PoolType::Standard;
+    let pool_type = PoolType::Concentrated;
 
     let all_mint_pools = amm_swap_client
         .fetch_pool_info(&mint_a, &mint_b, &pool_type, Some(100), None, None, None)
@@ -95,7 +95,7 @@ async fn main() {
             let keys = ClmmSwapParams {
                 pool_id: solana_pubkey::Pubkey::from_str(&key.id).unwrap(),
                 user_input_token: ata_a,
-                user_output_token: ata_b,
+                user_output_token: ata_b.clone(),
                 amount_specified: amount_in,
                 limit_price: None,
                 // if false -> amount is amount_in
@@ -103,7 +103,15 @@ async fn main() {
                 slippage_bps: 100,
             };
 
-            let sig = amm_swap_client.swap_clmm(keys).await.unwrap();
+            let (swap_result, tick_array_pubkey) = amm_swap_client
+                .calculate_swap_change_clmm(keys)
+                .await
+                .unwrap();
+
+            let sig = amm_swap_client
+                .swap_clmm(ata_b, swap_result, tick_array_pubkey)
+                .await
+                .unwrap();
             info!("{sig}");
         }
     }

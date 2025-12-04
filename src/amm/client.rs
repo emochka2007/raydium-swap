@@ -1,5 +1,5 @@
 use crate::amm::{AmmInstruction, SwapInstructionBaseIn};
-use crate::clmm::clmm_utils;
+use crate::clmm::{ClmmSwapChangeResult, clmm_utils};
 use crate::consts::{
     AMM_V4, CLMM, LIQUIDITY_FEES_DENOMINATOR, LIQUIDITY_FEES_NUMERATOR, swap_v2_discriminator,
 };
@@ -524,7 +524,10 @@ impl AmmSwapClient {
         Ok(*sig)
     }
 
-    pub async fn swap_clmm(&self, params: ClmmSwapParams) -> anyhow::Result<Signature> {
+    pub async fn calculate_swap_change_clmm(
+        &self,
+        params: ClmmSwapParams,
+    ) -> anyhow::Result<(ClmmSwapChangeResult, solana_pubkey::Pubkey)> {
         let base_in = !params.base_out;
         let tickarray_bitmap_extension = Pubkey::find_program_address(
             &[
@@ -540,8 +543,6 @@ impl AmmSwapClient {
 
         let clmm_pubkey = solana_pubkey::Pubkey::from_str_const(CLMM);
 
-        let user_output_token = params.user_output_token;
-
         let result = clmm_utils::calculate_swap_change(
             &self.rpc_client,
             clmm_pubkey,
@@ -554,15 +555,23 @@ impl AmmSwapClient {
             params.slippage_bps,
         )
         .await?;
+        Ok((result, tickarray_bitmap_extension))
+    }
 
+    pub async fn swap_clmm(
+        &self,
+        user_output_token: solana_pubkey::Pubkey,
+        clmm_swap_change_result: ClmmSwapChangeResult,
+        tick_array_bitmap_extension: solana_pubkey::Pubkey,
+    ) -> anyhow::Result<Signature> {
         let mut instructions = Vec::new();
         let user_output_token = Pubkey::from(user_output_token.to_bytes());
         let mut remaining_accounts = Vec::new();
         remaining_accounts.push(AccountMeta::new_readonly(
-            Address::from(tickarray_bitmap_extension.to_bytes()),
+            Address::from(tick_array_bitmap_extension.to_bytes()),
             false,
         ));
-        let mut accounts = result
+        let mut accounts = clmm_swap_change_result
             .remaining_tick_array_keys
             .into_iter()
             .map(|tick_array_address| {
@@ -572,20 +581,20 @@ impl AmmSwapClient {
         remaining_accounts.append(&mut accounts);
         let user_output_token = solana_pubkey::Pubkey::from(user_output_token.to_bytes());
         let swap_instr = self.swap_v2_instr(
-            result.pool_amm_config,
-            result.pool_id,
-            result.input_vault,
-            result.output_vault,
-            result.pool_observation,
-            result.user_input_token,
+            clmm_swap_change_result.pool_amm_config,
+            clmm_swap_change_result.pool_id,
+            clmm_swap_change_result.input_vault,
+            clmm_swap_change_result.output_vault,
+            clmm_swap_change_result.pool_observation,
+            clmm_swap_change_result.user_input_token,
             user_output_token,
-            result.input_vault_mint,
-            result.output_vault_mint,
+            clmm_swap_change_result.input_vault_mint,
+            clmm_swap_change_result.output_vault_mint,
             remaining_accounts,
-            result.amount,
-            result.other_amount_threshold,
-            result.sqrt_price_limit_x64,
-            result.is_base_input,
+            clmm_swap_change_result.amount,
+            clmm_swap_change_result.other_amount_threshold,
+            clmm_swap_change_result.sqrt_price_limit_x64,
+            clmm_swap_change_result.is_base_input,
         )?;
         instructions.extend(swap_instr);
 
