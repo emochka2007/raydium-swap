@@ -71,7 +71,7 @@ pub struct PoolKeys<PoolType> {
 }
 
 /// On‑chain account addresses needed for swaps.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AmmPool {
     /// AMM program ID.
@@ -97,7 +97,7 @@ pub struct AmmPool {
 }
 
 /// Vault addresses for token A and B.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Vault {
     #[serde(rename = "A")]
     pub a: String,
