@@ -63,8 +63,8 @@ pub struct Mint {
 pub struct MintExtensions {}
 
 /// Response from `/pools/key/ids`.
-#[derive(Deserialize, Debug)]
-pub struct PoolKeys<PoolType> {
+#[derive(Deserialize, Debug, Clone)]
+pub struct PoolKeys<PoolType: Clone> {
     pub id: String,
     pub success: bool,
     pub data: Vec<PoolType>,

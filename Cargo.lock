@@ -2800,7 +2800,7 @@ dependencies = [
 
 [[package]]
 name = "raydium-amm-swap"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "anchor-lang",
  "anchor-spl",

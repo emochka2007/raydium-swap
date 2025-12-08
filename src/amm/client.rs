@@ -225,7 +225,7 @@ impl AmmSwapClient {
     }
 
     /// Fetch raw pool account keys by pool ID via HTTP API.
-    pub async fn fetch_pools_keys_by_id<T: DeserializeOwned>(
+    pub async fn fetch_pools_keys_by_id<T: DeserializeOwned + Clone>(
         &self,
         id: &Pubkey,
     ) -> anyhow::Result<PoolKeys<T>> {
