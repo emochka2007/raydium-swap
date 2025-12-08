@@ -30,7 +30,7 @@ use tracing::log::info;
 use tracing::{debug, error};
 
 /// The result of computing a swap quote.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ComputeAmountOutResult {
     /// Raw amount out before slippage.
     pub amount_out: u64,
@@ -47,7 +47,7 @@ pub struct ComputeAmountOutResult {
 }
 
 /// The result of computing the required input amount for a desired output.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ComputeAmountInResult {
     /// Raw amount in before slippage.
     pub amount_in: u64,
