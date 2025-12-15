@@ -673,6 +673,7 @@ impl AmmSwapClient {
 
         let clmm_pubkey = solana_pubkey::Pubkey::from_str_const(CLMM);
 
+        // todo add sync
         let result = clmm_utils::calculate_swap_change(
             &self.rpc_client,
             clmm_pubkey,

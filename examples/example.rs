@@ -38,8 +38,8 @@ async fn main() {
     info!("{:?}", all_mint_pools);
 
     // For now, compute_amount_out & swap are only wired for standard AMM v4.
-    let mint_a = Address::from_str_const(&mint_a);
-    let mint_b = Address::from_str_const(&mint_b);
+    let mint_a = Address::from_str(&mint_a).unwrap();
+    let mint_b = Address::from_str(&mint_b).unwrap();
     let first_pool = all_mint_pools.first().unwrap();
     match pool_type {
         PoolType::Standard => {
@@ -104,8 +104,8 @@ async fn main() {
                 .unwrap();
             let keys = ClmmSwapParams {
                 pool_id: solana_pubkey::Pubkey::from_str(&key.id).unwrap(),
-                user_input_token: solana_pubkey::Pubkey::from_str_const(&mint_a.to_string()),
-                user_output_token: solana_pubkey::Pubkey::from_str_const(&mint_b.to_string()),
+                user_input_token: solana_pubkey::Pubkey::from_str(&mint_a.to_string()).unwrap(),
+                user_output_token: solana_pubkey::Pubkey::from_str(&mint_b.to_string()).unwrap(),
                 amount_specified: amount_in,
                 limit_price: None,
                 // if false -> amount is amount_in

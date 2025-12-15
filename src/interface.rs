@@ -1,7 +1,12 @@
 //! Types for deserializing JSON responses from the Raydium HTTP API.
 
+use crate::states::{AmmConfig, TickArrayBitmapExtension, TickArrayState};
+use anchor_spl::token_2022::spl_token_2022::extension::StateWithExtensions;
 use serde::Deserialize;
 use serde_json::Value;
+use solana_account::Account;
+use solana_address::Address;
+use std::collections::VecDeque;
 use std::fmt::Display;
 
 /// Response from `/pools/info/ids` for concentrated (CLMM) pools.
@@ -221,4 +226,28 @@ pub struct ClmmSwapParams {
     pub base_out: bool,
     /// Slippage for the swap in bps
     pub slippage_bps: u64,
+}
+
+pub type Rsps = Vec<Option<Account>>;
+pub type TickArrays = VecDeque<TickArrayState>;
+
+#[cfg_attr(feature = "derive", derive(Debug))]
+pub struct CalculateSwapChangeParams {
+    pub tickarray_bitmap_extension_account: Option<Account>,
+    pub amm_config_account: Option<Account>,
+    pub user_input_state: spl_token_2022::state::Account,
+    pub mint0_account: Option<Account>,
+    pub mint1_account: Option<Account>,
+    pub mint0_token_program: Address,
+    pub mint1_token_program: Address,
+    pub tickarray_bitmap_extension_state: TickArrayBitmapExtension,
+    pub zero_for_one: bool,
+    pub amount_specified: u64,
+    pub amm_config_state: AmmConfig,
+    pub input_vault: solana_pubkey::Pubkey,
+    pub output_vault: solana_pubkey::Pubkey,
+    pub input_vault_mint: solana_pubkey::Pubkey,
+    pub output_vault_mint: solana_pubkey::Pubkey,
+    pub input_token_program: Address,
+    pub output_token_program: Address,
 }
