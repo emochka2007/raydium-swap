@@ -1,7 +1,6 @@
 //! Types for deserializing JSON responses from the Raydium HTTP API.
 
 use crate::states::{AmmConfig, TickArrayBitmapExtension, TickArrayState};
-use anchor_spl::token_2022::spl_token_2022::extension::StateWithExtensions;
 use serde::Deserialize;
 use serde_json::Value;
 use solana_account::Account;

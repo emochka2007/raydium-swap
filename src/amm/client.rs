@@ -1,13 +1,17 @@
 use crate::amm::{AmmInstruction, SwapInstructionBaseIn};
-use crate::clmm::{ClmmSwapChangeResult, clmm_utils};
+use crate::clmm::{
+    ClmmSwapChangeResult, calculate_swap_change_accounts, clmm_utils, clmm_utils_sync,
+    get_tick_array_keys, get_tick_arrays,
+};
+use crate::common::rpc;
 use crate::consts::{
     AMM_V4, CLMM, LIQUIDITY_FEES_DENOMINATOR, LIQUIDITY_FEES_NUMERATOR, swap_v2_discriminator,
 };
 use crate::interface::{
-    AmmPool, ClmmPool, ClmmPoolInfosResponse, ClmmSinglePoolInfo, ClmmSwapParams, PoolKeys,
-    PoolType,
+    AmmPool, CalculateSwapChangeParams, ClmmPool, ClmmPoolInfosResponse, ClmmSinglePoolInfo,
+    ClmmSwapParams, PoolKeys, PoolType, Rsps, TickArrays,
 };
-use crate::states::POOL_TICK_ARRAY_BITMAP_SEED;
+use crate::states::{POOL_TICK_ARRAY_BITMAP_SEED, PoolState, TickArrayBitmapExtension};
 use anchor_lang::prelude::{Rent, SolanaSysvar};
 use anchor_spl::memo::spl_memo;
 use anyhow::{Context, anyhow};
@@ -686,6 +690,104 @@ impl AmmSwapClient {
             params.slippage_bps,
         )
         .await?;
+        Ok((result, tickarray_bitmap_extension))
+    }
+
+    pub async fn get_epoch(&self) -> anyhow::Result<u64> {
+        Ok(self.rpc_client.get_epoch_info().await?.epoch)
+    }
+
+    pub async fn get_pool_state(&self, pool_id: &Pubkey) -> anyhow::Result<PoolState> {
+        rpc::get_anchor_account::<PoolState>(&self.rpc_client, &pool_id)
+            .await?
+            .ok_or(anyhow!("Pool state was not found by rpc"))
+    }
+
+    pub async fn get_rsps(
+        &self,
+        input_token: solana_pubkey::Pubkey,
+        pool_state: &PoolState,
+        tickarray_bitmap_extension: &solana_pubkey::Pubkey,
+    ) -> anyhow::Result<Rsps> {
+        let load_accounts: Vec<Address> = [
+            input_token,
+            pool_state.amm_config,
+            pool_state.token_mint_0,
+            pool_state.token_mint_1,
+            tickarray_bitmap_extension.clone(),
+        ]
+        .iter()
+        .map(|pubkey| Address::from(pubkey.to_bytes()))
+        .collect();
+
+        Ok(self
+            .rpc_client
+            .get_multiple_accounts(&load_accounts)
+            .await?)
+    }
+
+    pub fn get_tick_array_bitmap_extension(pool_id: &Address) -> solana_pubkey::Pubkey {
+        let tickarray_bitmap_extension = Pubkey::find_program_address(
+            &[
+                POOL_TICK_ARRAY_BITMAP_SEED.as_bytes(),
+                pool_id.to_bytes().as_ref(),
+            ],
+            &Pubkey::from_str_const(CLMM),
+        )
+        .0;
+
+        let tickarray_bitmap_extension =
+            solana_pubkey::Pubkey::from(tickarray_bitmap_extension.to_bytes());
+
+        tickarray_bitmap_extension
+    }
+
+    pub async fn load_cur_and_next_five_tick_array(
+        &self,
+        raydium_v3_program: solana_pubkey::Pubkey,
+        pool_id: solana_pubkey::Pubkey,
+        pool_state: &PoolState,
+        tickarray_bitmap_extension: &TickArrayBitmapExtension,
+        zero_for_one: bool,
+    ) -> anyhow::Result<TickArrays> {
+        let tick_array_keys = get_tick_array_keys(
+            raydium_v3_program,
+            pool_id,
+            pool_state,
+            tickarray_bitmap_extension,
+            zero_for_one,
+        )?;
+        let tick_array_rsps =
+            clmm_utils::get_tick_array_rsps(&self.rpc_client, &tick_array_keys).await?;
+        get_tick_arrays(tick_array_rsps)
+    }
+
+    pub fn calculate_swap_change_clmm_sync(
+        &self,
+        params: ClmmSwapParams,
+        epoch: u64,
+        pool_state: PoolState,
+        rsps: Rsps,
+        tick_arrays: TickArrays,
+        tickarray_bitmap_extension: solana_pubkey::Pubkey,
+    ) -> anyhow::Result<(ClmmSwapChangeResult, solana_pubkey::Pubkey)> {
+        let base_in = !params.base_out;
+
+        let clmm_pubkey = solana_pubkey::Pubkey::from_str_const(CLMM);
+
+        let result = clmm_utils_sync::calculate_swap_change(
+            clmm_pubkey,
+            params.pool_id,
+            params.user_input_token,
+            params.amount_specified,
+            params.limit_price,
+            base_in,
+            params.slippage_bps,
+            epoch,
+            pool_state,
+            rsps,
+            tick_arrays,
+        )?;
         Ok((result, tickarray_bitmap_extension))
     }
 

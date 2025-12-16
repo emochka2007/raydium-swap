@@ -17,10 +17,8 @@ use arrayref::array_ref;
 use solana_account::Account;
 use solana_address::Address;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_epoch_info::EpochInfo;
 use solana_program_pack::Pack as SolanaProgramPack;
 use solana_pubkey::Pubkey;
-use spl_token::solana_program::program_pack::Pack;
 use spl_token_2022::extension::{BaseState, StateWithExtensions};
 use spl_token_2022::state::AccountState;
 use std::{
@@ -29,8 +27,8 @@ use std::{
 };
 use tracing::debug;
 
-fn calculate_swap_change_accounts(
-    rsps: Rsps,
+pub fn calculate_swap_change_accounts(
+    rsps: &Rsps,
     amount: u64,
     pool_state: PoolState,
     base_in: bool,
@@ -172,12 +170,15 @@ fn calculate_swap_change_accounts(
     })
 }
 
-fn calculate_other_amount_threshold<S: BaseState + SolanaProgramPack>(
+pub(crate) fn calculate_other_amount_threshold<S: BaseState + SolanaProgramPack>(
     pool_id: Address,
     raydium_v3_program: Pubkey,
     slippage_bps: u64,
     pool_state: PoolState,
-    calculate_swap_change_params: CalculateSwapChangeParams,
+    tickarray_bitmap_extension_state: TickArrayBitmapExtension,
+    zero_for_one: bool,
+    amount_specified: u64,
+    amm_config_state: AmmConfig,
     limit_price: Option<f64>,
     base_in: bool,
     mut tick_arrays: TickArrays,
@@ -185,26 +186,6 @@ fn calculate_other_amount_threshold<S: BaseState + SolanaProgramPack>(
     mint1_state: &StateWithExtensions<S>,
     epoch: u64,
 ) -> Result<(VecDeque<Pubkey>, u64, Option<u128>)> {
-    let CalculateSwapChangeParams {
-        tickarray_bitmap_extension_account,
-        amm_config_account,
-        user_input_state,
-        mint0_account,
-        mint1_account,
-        mint0_token_program,
-        mint1_token_program,
-        tickarray_bitmap_extension_state,
-        zero_for_one,
-        amount_specified,
-        amm_config_state,
-        input_vault,
-        output_vault,
-        input_vault_mint,
-        output_vault_mint,
-        input_token_program,
-        output_token_program,
-    } = calculate_swap_change_params;
-
     let sqrt_price_limit_x64 = if let Some(limit_price) = limit_price {
         let sqrt_price_x64 = price_to_sqrt_price_x64(
             limit_price,
@@ -296,13 +277,8 @@ pub async fn calculate_swap_change(
 
     let rsps = rpc_client.get_multiple_accounts(&load_accounts).await?;
     let CalculateSwapChangeParams {
-        tickarray_bitmap_extension_account,
-        amm_config_account,
-        user_input_state,
         mint0_account,
         mint1_account,
-        mint0_token_program,
-        mint1_token_program,
         tickarray_bitmap_extension_state,
         zero_for_one,
         amount_specified,
@@ -313,7 +289,8 @@ pub async fn calculate_swap_change(
         output_vault_mint,
         input_token_program,
         output_token_program,
-    } = calculate_swap_change_accounts(rsps, amount, pool_state, base_in, epoch)?;
+        ..
+    } = calculate_swap_change_accounts(&rsps, amount, pool_state, base_in, epoch)?;
 
     let mint0_state = unpack_mint(
         &mint0_account
@@ -328,7 +305,7 @@ pub async fn calculate_swap_change(
             .data,
     )?;
     // load tick_arrays
-    let mut tick_arrays = load_cur_and_next_five_tick_array(
+    let tick_arrays = load_cur_and_next_five_tick_array(
         rpc_client,
         raydium_v3_program,
         Pubkey::from(pool_id.to_bytes()),
@@ -343,7 +320,16 @@ pub async fn calculate_swap_change(
             raydium_v3_program,
             slippage_bps,
             pool_state,
-            cal,
+            tickarray_bitmap_extension_state,
+            zero_for_one,
+            amount_specified,
+            amm_config_state,
+            limit_price,
+            base_in,
+            tick_arrays,
+            &mint0_state,
+            &mint1_state,
+            epoch,
         )?;
 
     Ok(ClmmSwapChangeResult {
@@ -365,7 +351,7 @@ pub async fn calculate_swap_change(
     })
 }
 
-fn get_tick_array_keys(
+pub fn get_tick_array_keys(
     raydium_v3_program: Pubkey,
     pool_id: Pubkey,
     pool_state: &PoolState,
@@ -419,7 +405,7 @@ fn get_tick_array_keys(
     Ok(tick_array_keys)
 }
 
-fn get_tick_arrays(tick_array_rsps: Vec<Option<Account>>) -> Result<VecDeque<TickArrayState>> {
+pub fn get_tick_arrays(tick_array_rsps: Vec<Option<Account>>) -> Result<VecDeque<TickArrayState>> {
     let mut tick_arrays = VecDeque::new();
     for tick_array in tick_array_rsps {
         let tick_array_state = deserialize_anchor_account::<TickArrayState>(
@@ -449,7 +435,7 @@ async fn load_cur_and_next_five_tick_array(
     get_tick_arrays(tick_array_rsps)
 }
 
-async fn get_tick_array_rsps(
+pub(crate) async fn get_tick_array_rsps(
     rpc_client: &RpcClient,
     tick_array_keys: &Vec<Address>,
 ) -> solana_client::client_error::Result<Vec<Option<Account>>> {

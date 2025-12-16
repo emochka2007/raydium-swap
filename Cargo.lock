@@ -2800,7 +2800,7 @@ dependencies = [
 
 [[package]]
 name = "raydium-amm-swap"
-version = "0.1.16"
+version = "0.1.17"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -2818,7 +2818,6 @@ dependencies = [
  "solana-address 2.0.0",
  "solana-client",
  "solana-commitment-config",
- "solana-epoch-info",
  "solana-program 3.0.0",
  "solana-program-pack 2.2.1",
  "solana-pubkey 2.4.0",

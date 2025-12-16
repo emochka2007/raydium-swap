@@ -1,6 +1,6 @@
 [package]
 name = "raydium-amm-swap"
-version = "0.1.16"
+version = "0.1.17"
 edition = "2024"
 authors = ["Nikita Pozniakov"]
 description = "A high‑level client for interacting with Raydium AMM pools on Solana"
@@ -48,7 +48,6 @@ solana-program-pack = "2.2.1"
 serde_json = "1.0.145"
 log = "0.4.28"
 solana-account = "3.2.0"
-solana-epoch-info = "3.1.0"
 
 [dev-dependencies]
 tracing-subscriber = "0.3.22"
