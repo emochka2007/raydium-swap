@@ -1,15 +1,14 @@
 use crate::amm::{AmmInstruction, SwapInstructionBaseIn};
 use crate::clmm::{
-    ClmmSwapChangeResult, calculate_swap_change_accounts, clmm_utils, clmm_utils_sync,
-    get_tick_array_keys, get_tick_arrays,
+    ClmmSwapChangeResult, clmm_utils, clmm_utils_sync, get_tick_array_keys, get_tick_arrays,
 };
 use crate::common::rpc;
 use crate::consts::{
     AMM_V4, CLMM, LIQUIDITY_FEES_DENOMINATOR, LIQUIDITY_FEES_NUMERATOR, swap_v2_discriminator,
 };
 use crate::interface::{
-    AmmPool, CalculateSwapChangeParams, ClmmPool, ClmmPoolInfosResponse, ClmmSinglePoolInfo,
-    ClmmSwapParams, PoolKeys, PoolType, Rsps, TickArrays,
+    AmmPool, ClmmPool, ClmmPoolInfosResponse, ClmmSinglePoolInfo, ClmmSwapParams, PoolKeys,
+    PoolType, Rsps, TickArrays,
 };
 use crate::states::{POOL_TICK_ARRAY_BITMAP_SEED, PoolState, TickArrayBitmapExtension};
 use anchor_lang::prelude::{Rent, SolanaSysvar};

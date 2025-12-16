@@ -435,7 +435,7 @@ async fn load_cur_and_next_five_tick_array(
     get_tick_arrays(tick_array_rsps)
 }
 
-pub(crate) async fn get_tick_array_rsps(
+pub async fn get_tick_array_rsps(
     rpc_client: &RpcClient,
     tick_array_keys: &Vec<Address>,
 ) -> solana_client::client_error::Result<Vec<Option<Account>>> {
