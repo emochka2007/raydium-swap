@@ -697,7 +697,7 @@ impl AmmSwapClient {
     }
 
     pub async fn get_pool_state(&self, pool_id: &Pubkey) -> anyhow::Result<PoolState> {
-        rpc::get_anchor_account::<PoolState>(&self.rpc_client, &pool_id)
+        rpc::get_anchor_account::<PoolState>(&self.rpc_client, pool_id)
             .await?
             .ok_or(anyhow!("Pool state was not found by rpc"))
     }
@@ -713,7 +713,7 @@ impl AmmSwapClient {
             pool_state.amm_config,
             pool_state.token_mint_0,
             pool_state.token_mint_1,
-            tickarray_bitmap_extension.clone(),
+            *tickarray_bitmap_extension,
         ]
         .iter()
         .map(|pubkey| Address::from(pubkey.to_bytes()))
@@ -735,10 +735,9 @@ impl AmmSwapClient {
         )
         .0;
 
-        let tickarray_bitmap_extension =
-            solana_pubkey::Pubkey::from(tickarray_bitmap_extension.to_bytes());
+        
 
-        tickarray_bitmap_extension
+        solana_pubkey::Pubkey::from(tickarray_bitmap_extension.to_bytes())
     }
 
     pub async fn load_cur_and_next_five_tick_array(

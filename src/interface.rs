@@ -6,7 +6,7 @@ use serde_json::Value;
 use solana_account::Account;
 use solana_address::Address;
 use std::collections::VecDeque;
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
 
 /// Response from `/pools/info/ids` for concentrated (CLMM) pools.
 #[derive(Deserialize, Debug)]
@@ -249,4 +249,61 @@ pub struct CalculateSwapChangeParams {
     pub output_vault_mint: solana_pubkey::Pubkey,
     pub input_token_program: Address,
     pub output_token_program: Address,
+}
+
+pub enum PoolSortField {
+    Liquidity,
+    Volume24h,
+    Volume7d,
+    Volume30d,
+    Fee24h,
+    Fee7d,
+    Fee30d,
+    Apr24h,
+    Apr7d,
+    Apr30d,
+}
+
+impl Display for PoolSortField {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let sort = match self {
+            Self::Liquidity => "liquidity",
+            Self::Volume24h => "volume24h",
+            Self::Volume7d => "volume_7d",
+            Self::Volume30d => "volume_30d",
+            Self::Fee24h => "fee_24h",
+            Self::Fee7d => "fee_7d",
+            Self::Fee30d => "fee_30d",
+            Self::Apr24h => "apr_24h",
+            Self::Apr7d => "apr_7d",
+            Self::Apr30d => "apr_30d",
+        };
+
+        write!(f, "{}", sort)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PoolSortField;
+
+    #[test]
+    fn pool_sort_field_display_outputs_expected_strings() {
+        let cases = [
+            (PoolSortField::Liquidity, "liquidity"),
+            (PoolSortField::Volume24h, "volume_24h"),
+            (PoolSortField::Volume7d, "volume7d"),
+            (PoolSortField::Volume30d, "volume30d"),
+            (PoolSortField::Fee24h, "fee24h"),
+            (PoolSortField::Fee7d, "fee7d"),
+            (PoolSortField::Fee30d, "fee30d"),
+            (PoolSortField::Apr24h, "apr24h"),
+            (PoolSortField::Apr7d, "apr7d"),
+            (PoolSortField::Apr30d, "apr30d"),
+        ];
+
+        for (field, expected) in cases.iter() {
+            assert_eq!(field.to_string(), *expected);
+        }
+    }
 }

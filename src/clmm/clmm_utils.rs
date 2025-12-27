@@ -234,9 +234,9 @@ pub(crate) fn calculate_other_amount_threshold<S: BaseState + SolanaProgramPack>
         other_amount_threshold = amount_with_slippage(other_amount_threshold, slippage_bps, true)?;
         // calc max in with transfer_fee
         let transfer_fee = if zero_for_one {
-            common_utils::get_transfer_inverse_fee(&mint0_state, epoch, other_amount_threshold)?
+            common_utils::get_transfer_inverse_fee(mint0_state, epoch, other_amount_threshold)?
         } else {
-            common_utils::get_transfer_inverse_fee(&mint1_state, epoch, other_amount_threshold)?
+            common_utils::get_transfer_inverse_fee(mint1_state, epoch, other_amount_threshold)?
         };
         other_amount_threshold += transfer_fee;
     }
