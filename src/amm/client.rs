@@ -541,9 +541,10 @@ impl AmmSwapClient {
                 // transferring lamports and calling `sync_native`. For arbitrary SPL
                 // mints we only create the associated token account.
                 if *mint == spl_token::native_mint::id() {
-                    let rent = Rent::get()?;
-                    let amount_to_wrap = lamports_fee
-                        .unwrap_or(rent.minimum_balance(spl_token::state::Account::LEN));
+                    let amount_to_wrap = self
+                        .rpc_client
+                        .get_minimum_balance_for_rent_exemption(spl_token::state::Account::LEN)
+                        .await?;
                     instructions.push(transfer(
                         &self.owner.pubkey(),
                         &associated_token_account,
@@ -734,8 +735,6 @@ impl AmmSwapClient {
             &Pubkey::from_str_const(CLMM),
         )
         .0;
-
-        
 
         solana_pubkey::Pubkey::from(tickarray_bitmap_extension.to_bytes())
     }
