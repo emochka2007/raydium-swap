@@ -66,14 +66,7 @@ async fn main() {
             info!("Standard pool key: {:?}", key);
 
             let signature = amm_swap_client
-                .swap_amm(
-                    key,
-                    &mint_a,
-                    &mint_b,
-                    amount_in,
-                    compute.min_amount_out,
-                    None,
-                )
+                .swap_amm(key, &mint_a, &mint_b, amount_in, compute.min_amount_out)
                 .await
                 .unwrap();
             info!("{signature}");
@@ -96,12 +89,12 @@ async fn main() {
             info!("ata b {}", ata_b.to_string());
             info!("ata_a {}", ata_a.to_string());
             let mint_a = amm_swap_client
-                .get_or_create_token_program(&mint_a, None)
+                .get_or_create_token_program(&mint_a)
                 .await
                 .unwrap();
 
             let mint_b = amm_swap_client
-                .get_or_create_token_program(&mint_b, None)
+                .get_or_create_token_program(&mint_b)
                 .await
                 .unwrap();
             let pool_id = solana_pubkey::Pubkey::from_str(&key.id).unwrap();
@@ -117,7 +110,7 @@ async fn main() {
                 slippage_bps: 100,
             };
 
-            let pool_id = solana_address::Address::from(pool_id.to_bytes());
+            let pool_id = Address::from(pool_id.to_bytes());
 
             let epoch = amm_swap_client.get_epoch().await.unwrap();
             let pool_state = amm_swap_client.get_pool_state(&pool_id).await.unwrap();
@@ -146,7 +139,7 @@ async fn main() {
 
             let instant = Instant::now();
             info!("Starting swap calc");
-            let (swap_result, tick_array_pubkey) = amm_swap_client
+            let (_, _) = amm_swap_client
                 .calculate_swap_change_clmm_sync(
                     keys,
                     epoch,

@@ -11,7 +11,6 @@ use crate::interface::{
     PoolType, Rsps, TickArrays,
 };
 use crate::states::{POOL_TICK_ARRAY_BITMAP_SEED, PoolState, TickArrayBitmapExtension};
-use anchor_lang::prelude::{Rent, SolanaSysvar};
 use anchor_spl::memo::spl_memo;
 use anyhow::{Context, anyhow};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -503,11 +502,7 @@ impl AmmSwapClient {
         })
     }
 
-    pub async fn get_or_create_token_program(
-        &self,
-        mint: &Pubkey,
-        lamports_fee: Option<u64>,
-    ) -> anyhow::Result<Pubkey> {
+    pub async fn get_or_create_token_program(&self, mint: &Pubkey) -> anyhow::Result<Pubkey> {
         let associated_token_account =
             spl_associated_token_account::get_associated_token_address(&self.owner.pubkey(), mint);
         let balance = self
@@ -587,16 +582,11 @@ impl AmmSwapClient {
         mint_b: &Address,
         amount_in: u64,
         amount_out: u64, // out.amount_out means amount 'without' slippage
-        create_program_fee: Option<u64>,
     ) -> anyhow::Result<Signature> {
         let amm_program = Pubkey::from_str_const(AMM_V4);
 
-        let user_token_source = self
-            .get_or_create_token_program(mint_a, create_program_fee)
-            .await?;
-        let user_token_destination = self
-            .get_or_create_token_program(mint_b, create_program_fee)
-            .await?;
+        let user_token_source = self.get_or_create_token_program(mint_a).await?;
+        let user_token_destination = self.get_or_create_token_program(mint_b).await?;
 
         info!(
             "Executing swap from {:?} to {:?}",

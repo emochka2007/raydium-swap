@@ -64,14 +64,7 @@ async fn main() {
             info!("Standard pool key: {:?}", key);
 
             let signature = amm_swap_client
-                .swap_amm(
-                    key,
-                    &mint_a,
-                    &mint_b,
-                    amount_in,
-                    compute.min_amount_out,
-                    None,
-                )
+                .swap_amm(key, &mint_a, &mint_b, amount_in, compute.min_amount_out)
                 .await
                 .unwrap();
             info!("{signature}");
@@ -94,12 +87,12 @@ async fn main() {
             info!("ata b {}", ata_b.to_string());
             info!("ata_a {}", ata_a.to_string());
             let mint_a = amm_swap_client
-                .get_or_create_token_program(&mint_a, None)
+                .get_or_create_token_program(&mint_a)
                 .await
                 .unwrap();
 
             let mint_b = amm_swap_client
-                .get_or_create_token_program(&mint_b, None)
+                .get_or_create_token_program(&mint_b)
                 .await
                 .unwrap();
             let keys = ClmmSwapParams {
